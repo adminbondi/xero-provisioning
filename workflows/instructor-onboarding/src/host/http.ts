@@ -1,4 +1,5 @@
 import { emailsMatch } from "../match.ts";
+import { isCreatedTimeFilter } from "./airtable-poll.ts";
 import { redactSensitiveError } from "../sensitive.ts";
 import type {
   AirtableListArgs,
@@ -141,11 +142,15 @@ function xeroHeaders(token: string, tenantId: string): Headers {
 export function createAirtablePort(options: { fetch: typeof fetch; token: string }): AirtablePort {
   return {
     async listRecords(args: AirtableListArgs) {
-      if (args.view !== null || args.filterByFormula !== null || args.includeAttachments !== true) {
-        throw new Error("Airtable list must include attachments and must not set a view or filter.");
+      if (args.view !== null || args.includeAttachments !== true) {
+        throw new Error("Airtable list must include attachments and must not set a view.");
+      }
+      if (args.filterByFormula !== null && !isCreatedTimeFilter(args.filterByFormula)) {
+        throw new Error("Airtable list filter must be IS_AFTER(CREATED_TIME(), ...).");
       }
       const url = new URL(`https://api.airtable.com/v0/${args.baseId}/${args.tableId}`);
       url.searchParams.set("pageSize", "100");
+      if (args.filterByFormula) url.searchParams.set("filterByFormula", args.filterByFormula);
       if (args.offset) url.searchParams.set("offset", args.offset);
       const response = await options.fetch(url, {
         headers: { Authorization: `Bearer ${options.token}` },

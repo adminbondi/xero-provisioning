@@ -2,9 +2,9 @@
 
 Rebuild of Zapier Zap 364623444, steps 1–7, for Balance Moves (Bondi). Jira steps 8–9 are not implemented. There is no custom-code step: the published map has none, and the placeholder slot has been removed.
 
-Host (decided, not deployed): one Cloudflare Worker. An Airtable automation posts the new row to `POST /intake`. The Worker puts it on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each of the seven steps is its own `step.do`. A daily cron is the safety net for rows that never reached the queue. D1 and KV are not used.
+Host (decided, not deployed): one Cloudflare Worker. Once an hour it lists new rows in Airtable and puts each one on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each of the seven steps is its own `step.do`. Airtable's free plan cannot run scripts, so there is no Airtable automation. This hourly cron is the only cron. It replaces the automation and the daily safety net. KV stores the created-time watermark. D1 is not used.
 
-The repo README has the full write-up, including why there is no durable store, the `+61` mobile oddity (behavior unchanged; proposed E.164 is `+614…`), and switchover (do not switch the Zap off without Thiago's explicit go).
+The repo README has the full write-up, including the watermark, the `+61` mobile oddity (behavior unchanged; proposed E.164 is `+614…`), and switchover (do not switch the Zap off without Thiago's explicit go).
 
 ## Run
 
@@ -24,9 +24,8 @@ npm run dry-run
 | Worker (fetch, queue, cron, Workflow class) | `src/host/worker.ts` |
 | Intake auth | `src/host/intake.ts` |
 | Queue consumer | `src/host/queue-consumer.ts` |
-| Daily safety net | `src/host/safety-net.ts` |
+| Hourly Airtable poll | `src/host/airtable-poll.ts` |
 | Wrangler config | `wrangler.jsonc` |
-| Airtable automation script | `airtable/on-record-created.js` |
 | Super funds | `src/lookups/super-funds.ts` |
 | Gender | `src/lookups/gender.ts` |
 | Employee / contact mappings | `src/mappings/` |
@@ -55,24 +54,29 @@ npx wrangler secret put GMAIL_CLIENT_SECRET
 npx wrangler secret put GMAIL_REFRESH_TOKEN
 npx wrangler secret put XERO_WEEKLY_PAYROLL_CALENDAR_ID
 npx wrangler secret put SAFETY_NET_NOT_BEFORE
+npx wrangler kv namespace create AIRTABLE_CURSOR
 ```
 
-`DRY_RUN` is already `"true"` in `wrangler.jsonc`. Do not change it to `false` in this setup.
+`DRY_RUN` is already `"true"` in `wrangler.jsonc`. Do not change it to `false` in this setup. Do not deploy from this pull request. The Workers Free plan already has 5 crons on other Workers, so attaching this hourly cron may need Pedro to free a slot first.
 
-`XERO_WEEKLY_PAYROLL_CALENDAR_ID` is the single WEEKLY payroll calendar id. The employee step posts once and does not list calendars. `SAFETY_NET_NOT_BEFORE` is an ISO timestamp. The daily check ignores rows created at or before it. The cron in `wrangler.jsonc` is `0 21 * * *` (21:00 UTC).
+`XERO_WEEKLY_PAYROLL_CALENDAR_ID` is the single WEEKLY payroll calendar id. The employee step posts once and does not list calendars. `SAFETY_NET_NOT_BEFORE` is the initial created-time cursor. Until that timestamp or a KV watermark exists, the poll lists nothing. The only cron in `wrangler.jsonc` is `0 * * * *` (minute 0 of every hour, UTC).
 
-Xero auth is an OAuth refresh token, not a Custom Connection. If Xero returns a new refresh token, the step fails instead of dropping it. There is no KV row to store the replacement.
+`AIRTABLE_TOKEN` is a Worker secret (`npx wrangler secret put AIRTABLE_TOKEN`). It is never committed. Tests do not need it. Put the namespace id from `kv namespace create` into `wrangler.jsonc` before a deploy. The placeholder id is not a real namespace.
 
-## Airtable automation
+Each hourly run is one Airtable list call, filtered with `IS_AFTER(CREATED_TIME(), watermark)`, page size 100, no view, and no per-record read. A second page is requested only when Airtable returns an offset. Steady state does not page: **720 list calls in a 30-day month** (24 × 30) and **744 in a 31-day month** (24 × 31). Both sit under Airtable's about 1,000 calls a month.
 
-In the Instructors table, add an automation: when a record is created, run `airtable/on-record-created.js`. Set three inputs: `recordId` (the triggering record), `workerUrl` (the Worker origin plus `/intake`), and `ingressToken` (the same value as `INGRESS_TOKEN`). Do not paste the token into the script file.
+Xero auth is an OAuth refresh token, not a Custom Connection. If Xero returns a new refresh token, the step fails instead of dropping it. That token is not written to KV. KV holds only the created-time watermark.
+
+## Airtable
+
+Airtable's free plan cannot run scripts, so the record-created automation is not used. Do not install one. New rows are found by the hourly poll and sent through the existing queue, then the Workflow. `POST /intake` remains for a manual post. The Workflow instance id is still the duplicate lock for Xero.
 
 ## Required env vars
 
 | Variable | System | Purpose |
 | --- | --- | --- |
-| `INGRESS_TOKEN` | Worker | Bearer token the Airtable script sends to `POST /intake`. |
-| `AIRTABLE_TOKEN` | Airtable | Safety-net read of Instructors in base `appePgXVPIIkgnvBQ`. |
+| `INGRESS_TOKEN` | Worker | Bearer token for a manual `POST /intake`. The hourly poll does not use it. |
+| `AIRTABLE_TOKEN` | Airtable | Worker secret. Hourly read of Instructors in base `appePgXVPIIkgnvBQ`. Never commit it. |
 | `XERO_CLIENT_ID` | Xero | OAuth client. |
 | `XERO_CLIENT_SECRET` | Xero | OAuth client secret. |
 | `XERO_REFRESH_TOKEN` | Xero | Refresh token. A rotated token is refused, not stored. |
@@ -82,12 +86,12 @@ In the Instructors table, add an automation: when a record is created, run `airt
 | `GMAIL_CLIENT_ID` | Google | Send as `admin@balancemoves.com.au`. |
 | `GMAIL_CLIENT_SECRET` | Google | OAuth client secret. |
 | `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. |
-| `SAFETY_NET_NOT_BEFORE` | Worker | Switchover timestamp. Unset means the daily check lists nothing. |
+| `SAFETY_NET_NOT_BEFORE` | Worker | Initial created-time cursor. Unset, with no KV watermark, means the poll lists nothing. |
 | `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, and Gmail writes. |
 
-`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run Slack and email previews are masked the same way. A live #management Slack post is still the Zap text. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). That does not use the live id, so the same record can be replayed live after `DRY_RUN` is set to `false`. A second dry run of the same record does not start another instance.
+`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run Slack and email previews are masked the same way. A live #management Slack post is still the Zap text. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). The dry-run poll uses its own KV watermark, so it does not consume the live cursor or the live instance id. A second dry run of the same record does not start another instance.
 
-After merge: deploy with `DRY_RUN=true`, set `SAFETY_NET_NOT_BEFORE` to the deploy instant in UTC, post one row to `/intake`, and read the `dry-run-would-send` logs. Do not set `DRY_RUN` to `false` until a later go. Thiago is turning the Zap off first.
+Do not deploy this pull request. When a deploy does happen, keep `DRY_RUN=true`, set `SAFETY_NET_NOT_BEFORE` to that instant in UTC, and let the hourly poll list rows created after it. Do not set `DRY_RUN` to `false` until a later go. Thiago is turning the Zap off first. Deploy may need Pedro to free a cron slot on the Workers Free plan.
 
 Optional: `XERO_ORG_SHORTCODE`, `SLACK_CHANNEL_ID`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_CC`, `EMAIL_BCC`, `START_DATE_TIMEZONE`, `AIRTABLE_BASE_ID`, `AIRTABLE_TABLE_ID`, `CONFLUENCE_GUIDE_URL`. Defaults are the Zap's public values.
 

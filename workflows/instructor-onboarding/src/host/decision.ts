@@ -1,4 +1,4 @@
-import { SAFETY_NET_CRON } from "../config.ts";
+import { AIRTABLE_POLL_CRON } from "../config.ts";
 
 /**
  * Decided host for Zap 364623444 steps 1–7.
@@ -8,13 +8,13 @@ export const HOSTING_DECISION = {
   status: "decided",
   decided: true,
   host: "cloudflare-worker",
-  trigger: "airtable-automation-to-queue",
+  trigger: "hourly-airtable-poll",
   execution: "cloudflare-workflows",
   queue: "instructor-onboarding-intake",
   deadLetterQueue: "instructor-onboarding-intake-dlq",
   idempotency: "workflow-instance-id",
-  durableStore: "none",
-  safetyNetCron: SAFETY_NET_CRON,
+  durableStore: "kv-created-time-watermark",
+  pollCron: AIRTABLE_POLL_CRON,
   xeroAuth: "oauth-refresh-token",
   dryRunDefault: true,
   dryRunInstanceSuffix: "-dry",
