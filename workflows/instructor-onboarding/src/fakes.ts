@@ -2,6 +2,7 @@ import { emailsMatch, namesMatch } from "./match.ts";
 import type {
   AirtableListArgs,
   AirtablePort,
+  ContactDetails,
   ContactMatch,
   EmailPort,
   EmployeeDetails,
@@ -201,13 +202,30 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
       calls.push({ port: "employees", method: "getEmployee", detail: { employeeId } });
       const employee = employees.find((item) => item.employeeId === employeeId);
       if (!employee) throw new Error(`Employee ${employeeId} was not found.`);
+      const memberships = readback?.superMemberships
+        ? structuredClone(readback.superMemberships)
+        : structuredClone(employee.superMemberships);
+      const line = employee.payTemplate?.SuperLines[0];
+      const tax = employee.payload?.TaxDeclaration;
       return {
         employeeId,
         gender: readback && "gender" in readback ? (readback.gender ?? null) : employee.gender,
         incomeType: readback && "incomeType" in readback ? (readback.incomeType ?? null) : employee.incomeType,
-        superMemberships: readback?.superMemberships
-          ? structuredClone(readback.superMemberships)
-          : structuredClone(employee.superMemberships),
+        employmentType: employee.payload?.EmploymentType ?? null,
+        payrollCalendarId: employee.payload?.PayrollCalendarID ?? (calendars[0]?.payrollCalendarId ?? null),
+        residencyStatus: tax?.ResidencyStatus ?? null,
+        tfnPresent: typeof tax?.TaxFileNumber === "string" && tax.TaxFileNumber.trim().length > 0,
+        abnPresent: typeof tax?.ABN === "string" && tax.ABN.trim().length > 0,
+        superMemberships: memberships,
+        superLine: line
+          ? {
+              contributionType: line.ContributionType,
+              calculationType: line.CalculationType,
+              expenseAccountCode: line.ExpenseAccountCode,
+              liabilityAccountCode: line.LiabilityAccountCode,
+              amountBlank: true,
+            }
+          : null,
       };
     },
     async updatePayTemplate(employeeId: string, template: XeroPayTemplate) {
@@ -282,6 +300,20 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
         payload: structuredClone(payload),
       });
       return { contactId, created: true };
+    },
+    async getContact(contactId: string): Promise<ContactDetails> {
+      calls.push({ port: "contacts", method: "getContact", detail: { contactId } });
+      const contact = contacts.find((item) => item.contactId === contactId);
+      if (!contact) throw new Error(`Contact ${contactId} was not found.`);
+      const payload = contact.payload;
+      const mobile = payload?.Phones.find((phone) => phone.PhoneType === "MOBILE")?.PhoneNumber ?? null;
+      return {
+        contactId,
+        purchasesDefaultAccountCode: null,
+        accountsPayableTaxType: payload?.AccountsPayableTaxType ?? null,
+        bankDetailsPresent: typeof payload?.BankAccountDetails === "string" && payload.BankAccountDetails.trim().length > 0,
+        mobile,
+      };
     },
   };
 

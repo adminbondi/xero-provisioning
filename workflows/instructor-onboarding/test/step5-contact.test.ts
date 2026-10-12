@@ -10,7 +10,8 @@ import { runtime } from "./helpers.ts";
 
 test("step 5 builds the create/update contact, including concatenated bank details and +61", () => {
   const record = parseAirtableRecord(sampleAirtableRecord());
-  assert.equal(contactMobile("0412345678"), "+610412345678");
+  assert.equal(contactMobile("0412345678"), "+61 412345678");
+  assert.equal(contactMobile("0400 000 000"), "+61 400 000 000");
   assert.equal(proposedE164Mobile("0412345678"), "+61412345678");
   assert.equal(proposedE164Mobile("+61412345678"), null);
   assert.equal(payloadWouldChange(), false);
@@ -28,7 +29,8 @@ test("step 5 builds the create/update contact, including concatenated bank detai
   assert.equal(JSON.stringify(payload).includes("Sam Nguyen"), false);
   assert.equal(payload.BankAccountDetails, "06200090817263");
   assert.equal(payload.Phones[0]?.PhoneType, "MOBILE");
-  assert.equal(payload.Phones[0]?.PhoneNumber, "+610412345678");
+  assert.equal(payload.Phones[0]?.PhoneNumber, "+61 412345678");
+  assert.equal("PurchasesDefaultAccountCode" in payload, false);
   assert.equal(payload.Phones[0]?.PhoneCountryCode, "");
   assert.equal(payload.Addresses[0]?.AddressType, "POBOX");
   assert.equal(payload.Addresses[0]?.Region, "VIC");

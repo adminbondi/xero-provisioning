@@ -47,11 +47,16 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(result.contact.created, true);
   assert.equal(result.contact.payload.Addresses[0]?.Region, "VIC");
   assert.equal(result.contact.payload.BankAccountDetails, "06200090817263");
-  assert.equal(result.contact.payload.Phones[0]?.PhoneNumber, "+610412345678");
+  assert.equal(result.contact.payload.Phones[0]?.PhoneNumber, "+61 412345678");
   assert.equal(result.slack.sent, true);
   assert.equal(result.slack.channel, "C09BK6Y2WHL");
-  assert.match(result.slack.text, /has successfully been created in Xero/);
+  assert.match(result.slack.text, /Onboarding needs attention/);
+  assert.match(result.slack.text, /MISSING Emergency contact/);
+  assert.match(result.slack.text, /PASS Default purchase account/);
+  assert.match(result.slack.text, /PASS Super line AustralianSuper SGC Fixed Amount accounts 478 and 826/);
   assert.match(result.slack.text, /https:\/\/go\.xero\.com\/app\/!hGL34\/payroll\/employee\/employee-1\/details/);
+  assert.match(result.slack.text, /https:\/\/abr\.business\.gov\.au\//);
+  assert.equal(result.slack.text.includes("https://abr.business.gov.au/ABN"), false);
   assert.equal(result.email.sent, true);
   assert.equal(result.email.message.from, "admin@balancemoves.com.au");
   assert.equal(result.email.message.subject, "Instructor Onboarding: Please Confirm Your Details");
@@ -67,6 +72,9 @@ test("dry run exercises steps 1-7 against fakes", async () => {
       "employees.getEmployee",
       "employees.updatePayTemplate",
       "contacts.upsertContact",
+      "employees.getEmployee",
+      "employees.listPayrollCalendars",
+      "contacts.getContact",
       "slack.postMessage",
       "email.send",
       "webhook.post",

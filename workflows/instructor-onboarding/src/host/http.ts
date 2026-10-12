@@ -332,11 +332,28 @@ export function createXeroEmployeePort(options: {
       );
       const employee = asArray(json, "Employees")[0];
       if (!employee) throw new Error(`Xero employee GET did not return ${employeeId}.`);
+      const tax = employee.TaxDeclaration;
+      const taxRecord = tax && typeof tax === "object" && !Array.isArray(tax) ? (tax as Record<string, unknown>) : {};
+      const superLine = asArray(employee.PayTemplate && typeof employee.PayTemplate === "object" ? employee.PayTemplate : {}, "SuperLines")[0];
       return {
         employeeId,
         gender: nullableString(employee.Gender),
         incomeType: nullableString(employee.IncomeType),
+        employmentType: nullableString(employee.EmploymentType),
+        payrollCalendarId: nullableString(employee.PayrollCalendarID),
+        residencyStatus: nullableString(taxRecord.ResidencyStatus),
+        tfnPresent: typeof taxRecord.TaxFileNumber === "string" && taxRecord.TaxFileNumber.trim().length > 0,
+        abnPresent: typeof taxRecord.ABN === "string" && taxRecord.ABN.trim().length > 0,
         superMemberships: asArray(employee, "SuperMemberships").map(readSuperMembership),
+        superLine: superLine
+          ? {
+              contributionType: nullableString(superLine.ContributionType),
+              calculationType: nullableString(superLine.CalculationType),
+              expenseAccountCode: nullableString(superLine.ExpenseAccountCode),
+              liabilityAccountCode: nullableString(superLine.LiabilityAccountCode),
+              amountBlank: superLine.Amount == null || superLine.Amount === "",
+            }
+          : null,
       };
     },
     async updatePayTemplate(employeeId: string, template: XeroPayTemplate) {
@@ -425,6 +442,25 @@ export function createXeroContactPort(options: {
         throw new Error("Xero contact upsert did not return ContactID.");
       }
       return { contactId: saved.ContactID, created: !existingContactId };
+    },
+    async getContact(contactId: string) {
+      const token = await options.getAccessToken();
+      const json = await parseJson(
+        await fetchImpl(`${ACCOUNTING_BASE}/Contacts/${encodeURIComponent(contactId)}`, {
+          headers: xeroHeaders(token, options.tenantId),
+        }),
+      );
+      const contact = asArray(json, "Contacts")[0];
+      if (!contact) throw new Error(`Xero contact GET did not return ${contactId}.`);
+      const mobile = asArray(contact, "Phones").find((phone) => phone.PhoneType === "MOBILE");
+      const purchase = contact.PurchasesDefaultAccountCode;
+      return {
+        contactId,
+        purchasesDefaultAccountCode: typeof purchase === "string" ? purchase : null,
+        accountsPayableTaxType: nullableString(contact.AccountsPayableTaxType),
+        bankDetailsPresent: typeof contact.BankAccountDetails === "string" && contact.BankAccountDetails.trim().length > 0,
+        mobile: mobile ? nullableString(mobile.PhoneNumber) : null,
+      };
     },
   };
 }

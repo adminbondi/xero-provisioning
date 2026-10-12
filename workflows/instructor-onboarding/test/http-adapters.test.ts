@@ -99,6 +99,13 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
             EmployeeID: "emp-http",
             Gender: "F",
             IncomeType: "NONEMPLOYEE",
+            EmploymentType: "CONTRACTOR",
+            PayrollCalendarID: "cal-1",
+            TaxDeclaration: {
+              TaxFileNumber: "123456782",
+              ABN: "12345678901",
+              ResidencyStatus: "AUSTRALIANRESIDENT",
+            },
             SuperMemberships: [
               {
                 SuperMembershipID: "membership-http",
@@ -106,6 +113,16 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
                 EmployeeNumber: "SM-100200",
               },
             ],
+            PayTemplate: {
+              SuperLines: [
+                {
+                  ContributionType: "SGC",
+                  CalculationType: "FIXEDAMOUNT",
+                  ExpenseAccountCode: "478",
+                  LiabilityAccountCode: "826",
+                },
+              ],
+            },
           },
         ],
       });
@@ -154,15 +171,36 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200090817263");
       assert.equal(parsed.Contacts[0]?.TaxNumber, "12345678901");
       assert.equal(parsed.Contacts[0]?.AccountsPayableTaxType, "INPUT");
-      assert.equal(parsed.Contacts[0]?.Phones[0]?.PhoneNumber, "+610412345678");
+      assert.equal(parsed.Contacts[0]?.Phones[0]?.PhoneNumber, "+61 412345678");
+      assert.equal("PurchasesDefaultAccountCode" in (parsed.Contacts[0] ?? {}), false);
       assert.equal(parsed.Contacts[0]?.ContactGroups[0]?.Name, "Contractors");
       return Response.json({ Contacts: [{ ContactID: "con-http" }] });
+    }
+    if (url === "https://api.xero.com/api.xro/2.0/Contacts/con-http") {
+      return Response.json({
+        Contacts: [
+          {
+            ContactID: "con-http",
+            AccountsPayableTaxType: "INPUT",
+            BankAccountDetails: "06200090817263",
+            Phones: [{ PhoneType: "MOBILE", PhoneNumber: "+61 412345678" }],
+          },
+        ],
+      });
     }
     if (url === "https://slack.com/api/chat.postMessage") {
       const parsed = JSON.parse(body ?? "{}") as { channel: string; text: string };
       assert.equal(parsed.channel, "C09BK6Y2WHL");
       assert.match(parsed.text, /emp-http/);
       assert.match(parsed.text, /con-http/);
+      assert.match(parsed.text, /MISSING Emergency contact/);
+      assert.match(parsed.text, /PASS Default purchase account/);
+      assert.equal(parsed.text.includes("123456782"), false);
+      assert.equal(parsed.text.includes("90817263"), false);
+      assert.equal(parsed.text.includes("062000"), false);
+      assert.equal(parsed.text.includes("12345678901"), false);
+      assert.equal(parsed.text.includes("SM-100200"), false);
+      assert.equal(parsed.text.includes("https://abr.business.gov.au/ABN"), false);
       return Response.json({ ok: true, ts: "1.2" });
     }
     if (url === "https://oauth2.googleapis.com/token") {

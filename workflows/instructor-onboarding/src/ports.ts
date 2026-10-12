@@ -41,11 +41,34 @@ export interface SuperMembershipRef {
   employeeNumber: string;
 }
 
+export interface SuperLineReadback {
+  contributionType: string | null;
+  calculationType: string | null;
+  expenseAccountCode: string | null;
+  liabilityAccountCode: string | null;
+  /** True when Xero omitted Amount. A blank Fixed Amount is intentional. */
+  amountBlank: boolean;
+}
+
 export interface EmployeeDetails {
   employeeId: string;
   gender: string | null;
   incomeType: string | null;
+  employmentType: string | null;
+  payrollCalendarId: string | null;
+  residencyStatus: string | null;
+  tfnPresent: boolean;
+  abnPresent: boolean;
   superMemberships: SuperMembershipRef[];
+  superLine: SuperLineReadback | null;
+}
+
+export interface ContactDetails {
+  contactId: string;
+  purchasesDefaultAccountCode: string | null;
+  accountsPayableTaxType: string | null;
+  bankDetailsPresent: boolean;
+  mobile: string | null;
 }
 
 export interface XeroEmployeePort {
@@ -77,6 +100,8 @@ export interface XeroContactPort {
     payload: XeroContactPayload,
     existingContactId?: string,
   ): Promise<{ contactId: string; created: boolean }>;
+  /** One GET of `/Contacts/{ContactID}` for the end check. Does not return bank or tax values. */
+  getContact(contactId: string): Promise<ContactDetails>;
 }
 
 export interface SlackPort {
