@@ -7,7 +7,7 @@ import { HOSTING_DECISION } from "../src/host/decision.ts";
 import { DESIGN_ADDITIONS, ODDITIES } from "../src/oddities.ts";
 import { PIPELINE_STEPS } from "../src/run.ts";
 
-test("hosting is decided and the pipeline is the seven Zap steps", () => {
+test("hosting is decided and the pipeline keeps the Zap steps plus finalise and the webhook", () => {
   assert.equal(HOSTING_DECISION.status, "decided");
   assert.equal(HOSTING_DECISION.decided, true);
   assert.equal(HOSTING_DECISION.host, "cloudflare-worker");
@@ -22,9 +22,12 @@ test("hosting is decided and the pipeline is the seven Zap steps", () => {
     "super-fund",
     "gender",
     "xero-employee",
+    "xero-employee-read",
+    "xero-employee-finalise",
     "xero-contact",
     "slack",
     "email",
+    "patty-webhook",
   ]);
   assert.equal(new Set(ODDITIES.map((item) => item.id)).size, ODDITIES.length);
   assert.equal(new Set(DESIGN_ADDITIONS.map((item) => item.id)).size, DESIGN_ADDITIONS.length);

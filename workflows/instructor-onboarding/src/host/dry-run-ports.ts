@@ -12,6 +12,8 @@ export function dryRunPorts(): Ports {
       listPayrollCalendars: () => blocked("employees.listPayrollCalendars"),
       findEmployeesByEmail: () => blocked("employees.findEmployeesByEmail"),
       createEmployee: () => blocked("employees.createEmployee"),
+      getEmployee: () => blocked("employees.getEmployee"),
+      updatePayTemplate: () => blocked("employees.updatePayTemplate"),
     },
     contacts: {
       findContactByNumber: () => blocked("contacts.findContactByNumber"),
@@ -20,5 +22,6 @@ export function dryRunPorts(): Ports {
     },
     slack: { postMessage: () => blocked("slack.postMessage") },
     email: { send: () => blocked("email.send") },
+    webhook: { post: () => blocked("webhook.post") },
   };
 }

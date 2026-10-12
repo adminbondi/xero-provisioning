@@ -42,6 +42,9 @@ export interface Env extends LiveEnv {
   AIRTABLE_BASE_ID?: string;
   AIRTABLE_TABLE_ID?: string;
   CONFLUENCE_GUIDE_URL?: string;
+  /** Placeholder. DRY_RUN does not POST. Unset until Thiago provides the Patty routine URL. */
+  PATTY_WEBHOOK_URL?: string;
+  PATTY_WEBHOOK_SIGNING_SECRET?: string;
 }
 
 function envRecord(env: Env): Record<string, string | undefined> {
@@ -66,6 +69,8 @@ function envRecord(env: Env): Record<string, string | undefined> {
     AIRTABLE_TABLE_ID: env.AIRTABLE_TABLE_ID,
     CONFLUENCE_GUIDE_URL: env.CONFLUENCE_GUIDE_URL,
     XERO_WEEKLY_PAYROLL_CALENDAR_ID: env.XERO_WEEKLY_PAYROLL_CALENDAR_ID,
+    PATTY_WEBHOOK_URL: env.PATTY_WEBHOOK_URL,
+    PATTY_WEBHOOK_SIGNING_SECRET: env.PATTY_WEBHOOK_SIGNING_SECRET,
   };
 }
 

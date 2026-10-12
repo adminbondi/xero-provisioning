@@ -46,14 +46,9 @@ export const ODDITIES: readonly FlaggedItem[] = [
     summary: "Employee bank account, BSB, middle name, phone, and job title are left empty even when Airtable has bank details.",
   },
   {
-    id: "income-type-and-tax-scale-null",
+    id: "tax-scale-type-null",
     summary:
-      "EmploymentType is CONTRACTOR and EmploymentBasis is NONEMPLOYEE, but IncomeType and TaxScaleType are null. Sent as JSON null.",
-  },
-  {
-    id: "abn-on-contact-not-employee",
-    summary:
-      "ABN is the contact TaxNumber only. It is not sent on the employee tax declaration, where Xero requires an ABN when income type is NONEMPLOYEE.",
+      "IncomeType is NONEMPLOYEE. TaxScaleType stays null, which is what the Zap sent.",
   },
   {
     id: "tfn-in-slack-and-email",
@@ -96,7 +91,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "employee-not-updated-on-rerun",
     summary:
-      "The employee step is Create. A re-run reuses the existing employee and does not patch employee fields. The contact step is Create/Update, so a re-run updates the contact.",
+      "The employee create step does not patch name, tax, or address on a later run. The pay-template step sends the full desired template, so a retry replaces that template instead of appending lines. The contact step is Create/Update.",
   },
   {
     id: "slack-bank-line-is-account-number",
@@ -138,5 +133,30 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
     id: "notifications-not-resent",
     summary:
       "Slack and email are their own steps. A finished step is not run again, and a second queue delivery does not start another instance, so those messages are not sent twice.",
+  },
+  {
+    id: "abn-on-tax-declaration",
+    summary:
+      "TaxDeclaration.ABN is the 11-digit Airtable ABN. The accounting contact TaxNumber is the same ABN.",
+  },
+  {
+    id: "ivan-sgc-fixed-amount",
+    summary:
+      "PayTemplate SuperLines is one SGC line with CalculationType FIXEDAMOUNT, ExpenseAccountCode 478, LiabilityAccountCode 826, and no MinimumMonthlyEarnings. Weekly super at 12% stays on the existing payslip fix and is not put on this line.",
+  },
+  {
+    id: "pay-template-full-replace",
+    summary:
+      "updateEmployee does not document whether PayTemplate merges or replaces. The step sends the full desired template so a retry does not wipe or duplicate lines.",
+  },
+  {
+    id: "accounts-payable-tax-input",
+    summary:
+      "Payroll AU has no GST-registered flag. AccountsPayableTaxType is INPUT (GST on Expenses) for both YES and NO until Thiago confirms the split. The unconfirmed NO value is BAS Excluded (BASEXCLUDED).",
+  },
+  {
+    id: "emergency-contact-webhook-only",
+    summary:
+      "Emergency contact cannot be set through the Payroll AU or Accounting API. It is only on the Patty webhook payload.",
   },
 ];

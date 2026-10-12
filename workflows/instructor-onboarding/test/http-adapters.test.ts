@@ -7,8 +7,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { createAirtablePort, createLivePorts, type LiveEnv } from "../src/host/http.ts";
+import { signWebhookBody } from "../src/host/webhook-sign.ts";
 import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, defaultConfig } from "../src/config.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
+
+const WEBHOOK_URL = "https://patty-webhook.invalid/onboarding";
+const WEBHOOK_SECRET = "test-webhook-secret";
 
 const env: LiveEnv = {
   AIRTABLE_TOKEN: "test-airtable-token",
@@ -61,9 +65,74 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       return Response.json({ Employees: [] });
     }
     if (url === "https://api.xero.com/payroll.xro/1.0/Employees") {
-      const parsed = JSON.parse(body ?? "{}") as { Employees: Array<{ HomeAddress: { Region: string }; IncomeType: null }> };
-      assert.equal(parsed.Employees[0]?.HomeAddress.Region, "NSW");
-      assert.equal(parsed.Employees[0]?.IncomeType, null);
+      const parsed = JSON.parse(body ?? "{}") as {
+        Employees: Array<{
+          HomeAddress: { Region: string };
+          IncomeType: string;
+          EmploymentType: string;
+          TaxDeclaration: {
+            ABN: string;
+            AustralianResidentForTaxPurposes: boolean;
+            TaxFreeThresholdClaimed: boolean;
+            HasHELPDebt: boolean;
+            ResidencyStatus: string;
+          };
+          SuperMemberships: Array<{ SuperFundID: string }>;
+        }>;
+      };
+      const employee = parsed.Employees[0];
+      assert.equal(employee?.HomeAddress.Region, "NSW");
+      assert.equal(employee?.EmploymentType, "CONTRACTOR");
+      assert.equal(employee?.IncomeType, "NONEMPLOYEE");
+      assert.equal(employee?.TaxDeclaration.ABN, "12345678901");
+      assert.equal(employee?.TaxDeclaration.AustralianResidentForTaxPurposes, true);
+      assert.equal(employee?.TaxDeclaration.TaxFreeThresholdClaimed, false);
+      assert.equal(employee?.TaxDeclaration.HasHELPDebt, false);
+      assert.equal(employee?.TaxDeclaration.ResidencyStatus, "AUSTRALIANRESIDENT");
+      assert.equal(employee?.SuperMemberships[0]?.SuperFundID, "4caabd49-1d08-4d8b-958b-d933a113e9c9");
+      return Response.json({ Employees: [{ EmployeeID: "emp-http" }] });
+    }
+    if (url === "https://api.xero.com/payroll.xro/1.0/Employees/emp-http" && (init?.method ?? "GET") === "GET") {
+      return Response.json({
+        Employees: [
+          {
+            EmployeeID: "emp-http",
+            Gender: "F",
+            IncomeType: "NONEMPLOYEE",
+            SuperMemberships: [
+              {
+                SuperMembershipID: "membership-http",
+                SuperFundID: "4caabd49-1d08-4d8b-958b-d933a113e9c9",
+                EmployeeNumber: "SM-100200",
+              },
+            ],
+          },
+        ],
+      });
+    }
+    if (url === "https://api.xero.com/payroll.xro/1.0/Employees/emp-http" && init?.method === "POST") {
+      const parsed = JSON.parse(body ?? "{}") as {
+        Employees: Array<{
+          PayTemplate: {
+            EarningsLines: unknown[];
+            LeaveLines: unknown[];
+            SuperLines: Array<Record<string, unknown>>;
+          };
+        }>;
+      };
+      const template = parsed.Employees[0]?.PayTemplate;
+      assert.deepEqual(template?.EarningsLines, []);
+      assert.deepEqual(template?.LeaveLines, []);
+      assert.equal(template?.SuperLines.length, 1);
+      const line = template?.SuperLines[0];
+      assert.equal(line?.ContributionType, "SGC");
+      assert.equal(line?.CalculationType, "FIXEDAMOUNT");
+      assert.equal(line?.ExpenseAccountCode, "478");
+      assert.equal(line?.LiabilityAccountCode, "826");
+      assert.equal(line?.SuperMembershipID, "membership-http");
+      assert.equal("Percentage" in (line ?? {}), false);
+      assert.equal("Amount" in (line ?? {}), false);
+      assert.equal("MinimumMonthlyEarnings" in (line ?? {}), false);
       return Response.json({ Employees: [{ EmployeeID: "emp-http" }] });
     }
     if (url.startsWith("https://api.xero.com/api.xro/2.0/Contacts?page=")) {
@@ -71,9 +140,17 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
     }
     if (url === "https://api.xero.com/api.xro/2.0/Contacts") {
       const parsed = JSON.parse(body ?? "{}") as {
-        Contacts: Array<{ BankAccountDetails: string; Phones: Array<{ PhoneNumber: string }>; ContactGroups: Array<{ Name: string }> }>;
+        Contacts: Array<{
+          BankAccountDetails: string;
+          TaxNumber: string;
+          AccountsPayableTaxType: string;
+          Phones: Array<{ PhoneNumber: string }>;
+          ContactGroups: Array<{ Name: string }>;
+        }>;
       };
       assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200090817263");
+      assert.equal(parsed.Contacts[0]?.TaxNumber, "12345678901");
+      assert.equal(parsed.Contacts[0]?.AccountsPayableTaxType, "INPUT");
       assert.equal(parsed.Contacts[0]?.Phones[0]?.PhoneNumber, "+610412345678");
       assert.equal(parsed.Contacts[0]?.ContactGroups[0]?.Name, "Contractors");
       return Response.json({ Contacts: [{ ContactID: "con-http" }] });
@@ -99,10 +176,31 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       assert.match(raw, /Subject: Instructor Onboarding: Please Confirm Your Details/);
       return Response.json({ id: "gmail-msg-1" });
     }
+    if (url === WEBHOOK_URL) {
+      assert.equal(init?.method, "POST");
+      const signature = new Headers(init?.headers).get("x-balance-moves-signature");
+      assert.equal(signature, await signWebhookBody(WEBHOOK_SECRET, body ?? ""));
+      const parsed = JSON.parse(body ?? "{}") as {
+        xeroEmployeeId: string;
+        xeroContactId: string;
+        emergencyContactName: string;
+        emergencyContactMobile: string;
+        airtableRecordId: string;
+      };
+      assert.equal(parsed.xeroEmployeeId, "emp-http");
+      assert.equal(parsed.xeroContactId, "con-http");
+      assert.equal(parsed.emergencyContactName, "Sam Nguyen");
+      assert.equal(parsed.emergencyContactMobile, "0499888777");
+      assert.equal(parsed.airtableRecordId, "recInstructor001");
+      return Response.json({ ok: true });
+    }
     throw new Error(`unexpected url ${url}`);
   };
 
-  const ports = createLivePorts(env, fetchImpl);
+  const ports = createLivePorts(
+    { ...env, PATTY_WEBHOOK_URL: WEBHOOK_URL, PATTY_WEBHOOK_SIGNING_SECRET: WEBHOOK_SECRET },
+    fetchImpl,
+  );
   const result = await runInstructorOnboarding(sampleAirtableRecord(), {
     ports,
     mode: "live",

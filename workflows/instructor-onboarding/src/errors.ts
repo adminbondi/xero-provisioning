@@ -56,13 +56,20 @@ export class PayrollCalendarError extends WorkflowError {
   }
 }
 
+export class InvalidAbnError extends WorkflowError {
+  constructor(length: number) {
+    super("xero-employee", `TaxDeclaration.ABN must be 11 digits. Received length ${length}.`);
+  }
+}
+
 export function isTerminalWorkflowError(error: unknown): boolean {
   return (
     error instanceof MissingFieldsError ||
     error instanceof AirtableFieldTypeError ||
     error instanceof UnknownSuperFundError ||
     error instanceof UnknownGenderError ||
-    error instanceof PayrollCalendarError
+    error instanceof PayrollCalendarError ||
+    error instanceof InvalidAbnError
   );
 }
 
