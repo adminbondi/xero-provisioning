@@ -37,6 +37,12 @@ export interface RunDeps {
    * without repeating earlier steps. A fresh Map is a new instance.
    */
   stepCache?: Map<string, unknown>;
+  /**
+   * Workflow instance id. Included in the Xero employee idempotency key so a
+   * retry instance is not refused for reusing the failed request's key.
+   * Defaults to the Airtable record id, which is the first live instance id.
+   */
+  instanceId?: string;
 }
 
 export interface XeroMatchResult {
@@ -304,7 +310,8 @@ async function createEmployee(
   if (deps.mode === "shadow") {
     return { action: "create", employeeId: null, created: false, payload, startDate };
   }
-  const result = await deps.ports.employees.createEmployee(payload, employeeIdempotencyKey(record.recordId));
+  const instanceId = deps.instanceId?.trim() || record.recordId;
+  const result = await deps.ports.employees.createEmployee(payload, employeeIdempotencyKey(instanceId));
   return {
     action: result.created ? "create" : "reuse",
     employeeId: result.employeeId,

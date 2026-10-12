@@ -65,22 +65,22 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       return Response.json({ Employees: [] });
     }
     if (url === "https://api.xero.com/payroll.xro/1.0/Employees") {
-      const parsed = JSON.parse(body ?? "{}") as {
-        Employees: Array<{
-          HomeAddress: { Region: string };
-          IncomeType: string;
-          EmploymentType: string;
-          TaxDeclaration: {
-            ABN: string;
-            AustralianResidentForTaxPurposes: boolean;
-            TaxFreeThresholdClaimed: boolean;
-            HasHELPDebt: boolean;
-            ResidencyStatus: string;
-          };
-          SuperMemberships: Array<{ SuperFundID: string }>;
-        }>;
-      };
-      const employee = parsed.Employees[0];
+      const parsed = JSON.parse(body ?? "null") as Array<{
+        HomeAddress: { Region: string };
+        IncomeType: string;
+        EmploymentType: string;
+        TaxDeclaration: {
+          ABN: string;
+          AustralianResidentForTaxPurposes: boolean;
+          TaxFreeThresholdClaimed: boolean;
+          HasHELPDebt: boolean;
+          ResidencyStatus: string;
+        };
+        SuperMemberships: Array<{ SuperFundID: string }>;
+      }>;
+      assert.equal(Array.isArray(parsed), true);
+      assert.equal(body?.includes('"Employees"'), false);
+      const employee = parsed[0];
       assert.equal(employee?.HomeAddress.Region, "NSW");
       assert.equal(employee?.EmploymentType, "CONTRACTOR");
       assert.equal(employee?.IncomeType, "NONEMPLOYEE");
@@ -111,16 +111,18 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       });
     }
     if (url === "https://api.xero.com/payroll.xro/1.0/Employees/emp-http" && init?.method === "POST") {
-      const parsed = JSON.parse(body ?? "{}") as {
-        Employees: Array<{
-          PayTemplate: {
-            EarningsLines: unknown[];
-            LeaveLines: unknown[];
-            SuperLines: Array<Record<string, unknown>>;
-          };
-        }>;
-      };
-      const template = parsed.Employees[0]?.PayTemplate;
+      const parsed = JSON.parse(body ?? "null") as Array<{
+        EmployeeID: string;
+        PayTemplate: {
+          EarningsLines: unknown[];
+          LeaveLines: unknown[];
+          SuperLines: Array<Record<string, unknown>>;
+        };
+      }>;
+      assert.equal(Array.isArray(parsed), true);
+      assert.equal(body?.includes('"Employees"'), false);
+      const template = parsed[0]?.PayTemplate;
+      assert.equal(parsed[0]?.EmployeeID, "emp-http");
       assert.deepEqual(template?.EarningsLines, []);
       assert.deepEqual(template?.LeaveLines, []);
       assert.equal(template?.SuperLines.length, 1);
@@ -148,6 +150,7 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
           ContactGroups: Array<{ Name: string }>;
         }>;
       };
+      assert.equal(Array.isArray(parsed), false);
       assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200090817263");
       assert.equal(parsed.Contacts[0]?.TaxNumber, "12345678901");
       assert.equal(parsed.Contacts[0]?.AccountsPayableTaxType, "INPUT");
@@ -206,6 +209,7 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
     mode: "live",
     now: () => new Date("2026-10-12T13:30:00.000Z"),
     config: { ...defaultConfig(), payrollCalendarId: "cal-weekly" },
+    instanceId: "recInstructor001-retry-1",
   });
   assert.equal(result.employee.employeeId, "emp-http");
   assert.equal(result.contact.contactId, "con-http");
@@ -213,7 +217,7 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
   const employeePost = seen.find((call) => call.url === "https://api.xero.com/payroll.xro/1.0/Employees" && call.method === "POST");
   assert.equal(employeePost?.authorization, "Bearer test-xero-access-token");
   assert.equal(employeePost?.tenant, "test-xero-tenant");
-  assert.equal(employeePost?.idempotency, "instructor-onboarding:recInstructor001:employee");
+  assert.equal(employeePost?.idempotency, "instructor-onboarding:recInstructor001-retry-1:employee");
   assert.equal(seen.some((call) => call.url.includes("api.xero.com") && call.authorization === "Bearer test-xero-access-token"), true);
 
   const airtableFetch: typeof fetch = async (input, init) => {

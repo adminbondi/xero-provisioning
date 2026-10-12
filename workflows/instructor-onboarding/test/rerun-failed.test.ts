@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { startWorkflowForRecord } from "../src/host/queue-consumer.ts";
+import { employeeIdempotencyKey } from "../src/mappings/employee.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
 import { runtime } from "./helpers.ts";
 
@@ -24,9 +25,10 @@ test("a failed instance can run again without creating a second employee", async
   });
   assert.equal(rerun.result, "rerun");
   assert.equal(rerun.instanceId, `${record.id}-retry-1`);
+  assert.notEqual(employeeIdempotencyKey(rerun.instanceId), employeeIdempotencyKey(record.id));
   assert.deepEqual(started, [`${record.id}-retry-1`]);
 
-  const second = await runInstructorOnboarding(record, deps);
+  const second = await runInstructorOnboarding(record, { ...deps, instanceId: rerun.instanceId });
   assert.equal(second.employee.action, "skip-email");
   assert.equal(second.employee.created, false);
   assert.equal(second.employee.employeeId, first.employee.employeeId);
