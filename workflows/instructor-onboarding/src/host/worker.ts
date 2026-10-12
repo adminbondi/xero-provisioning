@@ -1,30 +1,32 @@
 /**
  * Cloudflare Worker for instructor onboarding.
  *
- * fetch: Airtable automation posts the new row. The handler checks a bearer token and enqueues it.
+ * scheduled: once an hour, list new Instructors rows and enqueue them. One cron.
  * queue: starts one Workflow instance. Live id is the Airtable record id. Dry-run id is that id plus `-dry`.
- * scheduled: daily safety net for rows that never reached the queue.
+ * fetch: POST /intake still accepts a row. The Airtable automation is not used.
  *
  * Tests do not import this file. They call the functions it uses, with fakes.
  */
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
-import { resolveConfig, SAFETY_NET_CRON } from "../config.ts";
+import { AIRTABLE_POLL_CRON, resolveConfig } from "../config.ts";
 import { isTerminalWorkflowError } from "../errors.ts";
-import { createLivePorts, missingLiveEnv, type LiveEnv } from "./http.ts";
+import { pollNewInstructors } from "./airtable-poll.ts";
 import { dryRunPorts } from "./dry-run-ports.ts";
+import { createAirtablePort, createLivePorts, missingLiveEnv, type LiveEnv } from "./http.ts";
 import { dryRunEnabled, handleIntake, workflowInstanceId } from "./intake.ts";
 import { startWorkflowForRecord } from "./queue-consumer.ts";
-import { runSafetyNet } from "./safety-net.ts";
 import { runOnboardingSteps, type RunDeps, type StepDo } from "../run.ts";
 import type { AirtableApiRecord } from "../types.ts";
-import type { MessageBatch, QueueBinding, WorkflowBinding } from "cloudflare:workers";
+import type { KvNamespace, MessageBatch, QueueBinding, WorkflowBinding } from "cloudflare:workers";
 
-export { SAFETY_NET_CRON };
+export { AIRTABLE_POLL_CRON };
 
 export interface Env extends LiveEnv {
   ONBOARDING_WORKFLOW: WorkflowBinding<AirtableApiRecord>;
   INTAKE_QUEUE: QueueBinding<AirtableApiRecord>;
+  /** Created-time watermark. Not the Xero duplicate lock. */
+  AIRTABLE_CURSOR: KvNamespace;
   INGRESS_TOKEN: string;
   /** Default true. Only the string "false" allows Xero, Slack, and Gmail writes. */
   DRY_RUN?: string;
@@ -149,38 +151,30 @@ async function onQueue(batch: MessageBatch<AirtableApiRecord>, env: Env): Promis
   }
 }
 
-async function onScheduled(env: Env): Promise<void> {
-  const missing = missingLiveEnv(envRecord(env));
-  if (missing.length > 0) {
-    console.log(JSON.stringify({ event: "safety-net-blocked", message: `Missing secrets: ${missing.join(", ")}` }));
+async function onScheduled(cron: string, env: Env): Promise<void> {
+  if (cron !== AIRTABLE_POLL_CRON) return;
+  if (!env.AIRTABLE_TOKEN) {
+    console.log(JSON.stringify({ event: "airtable-poll-blocked", message: "AIRTABLE_TOKEN is not set." }));
     return;
   }
-  const ports = createLivePorts(envRecord(env), fetch);
-  const result = await runSafetyNet({
-    airtable: ports.airtable,
+  const dryRun = dryRunEnabled(env.DRY_RUN);
+  const result = await pollNewInstructors({
+    airtable: createAirtablePort({ fetch, token: env.AIRTABLE_TOKEN }),
+    cursor: env.AIRTABLE_CURSOR,
+    dryRun,
     notBefore: env.SAFETY_NET_NOT_BEFORE ?? null,
     baseId: env.AIRTABLE_BASE_ID,
     tableId: env.AIRTABLE_TABLE_ID,
-    hasWorkflow: async (recordId) => {
-      const instanceId = workflowInstanceId(recordId, dryRunEnabled(env.DRY_RUN));
-      try {
-        const instance = await env.ONBOARDING_WORKFLOW.get(instanceId);
-        await instance.status();
-        return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/not found/i.test(message)) return false;
-        throw error;
-      }
-    },
     enqueue: (record) => env.INTAKE_QUEUE.send(record),
   });
   console.log(
     JSON.stringify({
-      event: "safety-net",
+      event: "airtable-poll",
+      dryRun,
       blocked: result.blocked,
       truncated: result.truncated,
-      enqueued: result.results.filter((item) => item.status === "enqueued").length,
+      pages: result.pages,
+      enqueued: result.enqueued.length,
     }),
   );
 }
@@ -193,7 +187,6 @@ export default {
     return onQueue(batch, env);
   },
   scheduled(controller: { cron: string }, env: Env): Promise<void> {
-    console.log(JSON.stringify({ event: "safety-net-cron", cron: controller.cron }));
-    return onScheduled(env);
+    return onScheduled(controller.cron, env);
   },
 };

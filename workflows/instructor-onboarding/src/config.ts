@@ -6,8 +6,18 @@
 export const AIRTABLE_BASE_ID = "appePgXVPIIkgnvBQ";
 export const AIRTABLE_TABLE_ID = "tblageJRycUMiyKGr";
 
-/** Daily safety-net cron. Wrangler crons are UTC: 21:00 UTC is 07:00 AEST / 08:00 AEDT. */
-export const SAFETY_NET_CRON = "0 21 * * *";
+/**
+ * Hourly Instructors poll. One cron only: this replaces the Airtable automation and the
+ * daily safety-net cron (`0 21 * * *`), which was never attached.
+ * `0 * * * *` is minute 0 of every hour, UTC. 24 runs a day.
+ */
+export const AIRTABLE_POLL_CRON = "0 * * * *";
+
+/** One list call per hourly run, when that run does not page. 24 × 30. */
+export const AIRTABLE_POLL_CALLS_PER_30_DAY_MONTH = 24 * 30;
+
+/** One list call per hourly run, when that run does not page. 24 × 31. */
+export const AIRTABLE_POLL_CALLS_PER_31_DAY_MONTH = 24 * 31;
 
 export const XERO_ORG_SHORTCODE = "!hGL34";
 export const SLACK_CHANNEL_ID = "C09BK6Y2WHL";

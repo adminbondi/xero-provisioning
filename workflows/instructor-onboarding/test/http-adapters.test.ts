@@ -73,7 +73,7 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       const parsed = JSON.parse(body ?? "{}") as {
         Contacts: Array<{ BankAccountDetails: string; Phones: Array<{ PhoneNumber: string }>; ContactGroups: Array<{ Name: string }> }>;
       };
-      assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200012345678");
+      assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200090817263");
       assert.equal(parsed.Contacts[0]?.Phones[0]?.PhoneNumber, "+610412345678");
       assert.equal(parsed.Contacts[0]?.ContactGroups[0]?.Name, "Contractors");
       return Response.json({ Contacts: [{ ContactID: "con-http" }] });

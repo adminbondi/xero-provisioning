@@ -61,7 +61,8 @@ export const ODDITIES: readonly FlaggedItem[] = [
   },
   {
     id: "no-view-or-filter",
-    summary: "The Airtable trigger has no view and no filter. Every new Instructors row is eligible.",
+    summary:
+      "The Zap trigger had no view and no filter, so every new Instructors row was eligible. The Worker poll still sets no view. It filters with IS_AFTER(CREATED_TIME(), watermark) so each hour is one list call.",
   },
   {
     id: "attachments-included-but-unused",
@@ -116,17 +117,17 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "workflow-instance-id",
     summary:
-      "The Airtable record id is the Cloudflare Workflow instance id. A second queue delivery does not start a second run, so it does not create a second employee or contact. D1 and KV are not used for this.",
+      "The Airtable record id is the Cloudflare Workflow instance id. A second queue delivery does not start a second run, so it does not create a second employee or contact. That id is the duplicate lock for Xero. The KV watermark is not.",
   },
   {
     id: "safety-net-not-before",
     summary:
-      "The daily safety net lists nothing until SAFETY_NET_NOT_BEFORE is set. That stops the first check from turning every historical Instructors row into an employee.",
+      "The hourly poll lists nothing until SAFETY_NET_NOT_BEFORE is set or a KV watermark already exists. That stops the first check from turning every historical Instructors row into an employee. The env value is only the initial cursor.",
   },
   {
     id: "no-durable-store",
     summary:
-      "Workflows persists each step result and retries only the failed step. The safety-net cutoff is an env var, not a moving cursor. D1 and KV are not part of this Worker.",
+      "Workflows persists each step result and retries only the failed step. KV stores only the created-time watermark for the hourly poll. D1 is not used. The watermark is not the Xero duplicate lock, and the Xero refresh token is not written there.",
   },
   {
     id: "reject-numeric-airtable-fields",

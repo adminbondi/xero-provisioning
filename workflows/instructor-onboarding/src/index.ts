@@ -9,7 +9,9 @@ export {
   EMAIL_FROM_NAME,
   EMAIL_SUBJECT,
   EMPLOYEE_HOME_STATE,
-  SAFETY_NET_CRON,
+  AIRTABLE_POLL_CALLS_PER_30_DAY_MONTH,
+  AIRTABLE_POLL_CALLS_PER_31_DAY_MONTH,
+  AIRTABLE_POLL_CRON,
   SLACK_CHANNEL_ID,
   START_DATE_TIMEZONE,
   XERO_ORG_SHORTCODE,
@@ -32,7 +34,13 @@ export { HOSTING_DECISION } from "./host/decision.ts";
 export { REQUIRED_LIVE_ENV, createLivePorts, missingLiveEnv } from "./host/http.ts";
 export { handleIntake } from "./host/intake.ts";
 export { startWorkflowForRecord } from "./host/queue-consumer.ts";
-export { SAFETY_NET_NOT_BEFORE_MESSAGE, runSafetyNet } from "./host/safety-net.ts";
+export {
+  AIRTABLE_POLL_BLOCKED_MESSAGE,
+  EXPECTED_AIRTABLE_CALLS,
+  createdAfterFormula,
+  memoryCursor,
+  pollNewInstructors,
+} from "./host/airtable-poll.ts";
 export { STEP_CONFIG } from "./host/step-config.ts";
 export { GENDER_ENTRIES, lookupGender } from "./lookups/gender.ts";
 export { SUPER_FUND_ENTRIES, lookupSuperFund } from "./lookups/super-funds.ts";
