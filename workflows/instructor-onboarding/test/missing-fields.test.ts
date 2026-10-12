@@ -44,10 +44,14 @@ test("missing fields are named and no external call is made", async () => {
 });
 
 test("each required Airtable field blocks the run on its own", async () => {
+  const aliases: Record<string, string[]> = {
+    Account: ["Bank Account Number"],
+    DOB: ["Date of Birth"],
+  };
   for (const field of required) {
     const { fake, deps } = runtime();
     await assert.rejects(
-      () => runInstructorOnboarding(withFields({}, [field]), deps),
+      () => runInstructorOnboarding(withFields({}, [field, ...(aliases[field] ?? [])]), deps),
       (error: unknown) => error instanceof MissingFieldsError && error.fields.includes(field),
     );
     assert.equal(fake.calls.length, 0, field);

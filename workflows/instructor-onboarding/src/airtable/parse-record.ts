@@ -40,7 +40,19 @@ export const REQUIRED_FIELD_LABELS = [
   AIRTABLE_FIELDS.account,
 ] as const;
 
-function readText(fields: Record<string, unknown>, key: string): string {
+/**
+ * Live Instructors columns that Airtable stores as numbers. Their integer text is the
+ * stored value. BSB and other text columns still reject numbers so a leading zero is not dropped.
+ */
+const INTEGER_TEXT_FIELDS = new Set([
+  "TFN",
+  "ABN",
+  "Superannuation Member Number",
+  "Bank Account Number",
+]);
+
+/** Read one Airtable cell as text. Single selects may already be a `{ name }` object. */
+export function airtableFieldText(fields: Record<string, unknown>, key: string): string {
   if (!Object.prototype.hasOwnProperty.call(fields, key) || fields[key] == null) {
     return "";
   }
@@ -48,8 +60,32 @@ function readText(fields: Record<string, unknown>, key: string): string {
   if (typeof value === "string") {
     return value;
   }
+  if (typeof value === "number" && INTEGER_TEXT_FIELDS.has(key)) {
+    if (!Number.isSafeInteger(value)) {
+      throw new AirtableFieldTypeError(key, "number");
+    }
+    return String(value);
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const name = (value as { name?: unknown }).name;
+    if (typeof name === "string") return name;
+  }
   const type = Array.isArray(value) ? "array" : typeof value;
   throw new AirtableFieldTypeError(key, type);
+}
+
+function readText(fields: Record<string, unknown>, key: string): string {
+  return airtableFieldText(fields, key);
+}
+
+/** First present label wins. Live Date of Birth / Bank Account Number fill the Zap labels when those are absent. */
+function readFirst(fields: Record<string, unknown>, keys: readonly string[]): string {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(fields, key) && fields[key] != null) {
+      return airtableFieldText(fields, key);
+    }
+  }
+  return "";
 }
 
 function extractAttachments(fields: Record<string, unknown>): AirtableAttachment[] {
@@ -81,7 +117,7 @@ export function parseAirtableRecord(raw: AirtableApiRecord): InstructorRecord {
     createdTime: typeof raw.createdTime === "string" ? raw.createdTime : null,
     firstName: readText(fields, AIRTABLE_FIELDS.firstName),
     lastName: readText(fields, AIRTABLE_FIELDS.lastName),
-    dateOfBirth: readText(fields, AIRTABLE_FIELDS.dateOfBirth),
+    dateOfBirth: readFirst(fields, [AIRTABLE_FIELDS.dateOfBirth, "Date of Birth"]),
     email: readText(fields, AIRTABLE_FIELDS.email),
     gender: readText(fields, AIRTABLE_FIELDS.gender),
     mobile: readText(fields, AIRTABLE_FIELDS.mobile),
@@ -94,7 +130,7 @@ export function parseAirtableRecord(raw: AirtableApiRecord): InstructorRecord {
     postalCode: readText(fields, AIRTABLE_FIELDS.postalCode),
     abn: readText(fields, AIRTABLE_FIELDS.abn),
     bsb: readText(fields, AIRTABLE_FIELDS.bsb),
-    account: readText(fields, AIRTABLE_FIELDS.account),
+    account: readFirst(fields, [AIRTABLE_FIELDS.account, "Bank Account Number"]),
     attachments: extractAttachments(fields),
     rawFields: structuredClone(fields),
   };

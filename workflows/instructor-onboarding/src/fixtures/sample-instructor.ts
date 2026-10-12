@@ -11,6 +11,7 @@ const SAMPLE: AirtableApiRecord = {
     Gender: "Female",
     Mobile: "0412345678",
     "Super Fund": "AustralianSuper",
+    "Superannuation Fund Name": "STA0100AU - AustralianSuper",
     "Superannuation Member Number": "SM-100200",
     TFN: "123456782",
     "Residential Address": "1 Example Street",
@@ -20,6 +21,7 @@ const SAMPLE: AirtableApiRecord = {
     ABN: "12345678901",
     BSB: "062000",
     Account: "12345678",
+    "Bank Account Number": "55556666",
     Certificate: [{ id: "att1", url: "https://example.invalid/cert.pdf", filename: "cert.pdf" }],
   },
 };
