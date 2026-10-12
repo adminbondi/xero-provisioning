@@ -1,4 +1,4 @@
-import { emailsMatch } from "./match.ts";
+import { emailsMatch, namesMatch } from "./match.ts";
 import type {
   AirtableListArgs,
   AirtablePort,
@@ -39,6 +39,8 @@ export interface ReadbackOverride {
 export interface FakeEmployee {
   employeeId: string;
   email: string;
+  firstName: string;
+  lastName: string;
   idempotencyKey: string | null;
   payload: XeroEmployeePayload | null;
   gender: string | null;
@@ -52,13 +54,14 @@ export interface FakeContact {
   contactId: string;
   name: string;
   contactNumber: string | null;
+  email: string | null;
   payload: XeroContactPayload | null;
 }
 
 export interface FakeOptions {
   calendars?: PayrollCalendar[];
-  employees?: Array<{ employeeId: string; email: string }>;
-  contacts?: Array<{ contactId: string; name: string; contactNumber: string | null }>;
+  employees?: Array<{ employeeId: string; email: string; firstName?: string; lastName?: string }>;
+  contacts?: Array<{ contactId: string; name: string; contactNumber: string | null; email?: string | null }>;
   airtableRecords?: AirtableApiRecord[];
   failUpsertContact?: number;
   failCreateEmployee?: number;
@@ -90,6 +93,8 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
   const employees: FakeEmployee[] = (options.employees ?? []).map((employee, index) => ({
     employeeId: employee.employeeId,
     email: employee.email,
+    firstName: employee.firstName ?? "",
+    lastName: employee.lastName ?? "",
     idempotencyKey: null,
     payload: null,
     gender: null,
@@ -107,6 +112,7 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
     contactId: contact.contactId,
     name: contact.name,
     contactNumber: contact.contactNumber,
+    email: contact.email ?? null,
     payload: null,
   }));
   const slack: SlackMessage[] = [];
@@ -137,9 +143,27 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
     },
     async findEmployeesByEmail(email: string): Promise<EmployeeMatch[]> {
       calls.push({ port: "employees", method: "findEmployeesByEmail", detail: { email } });
+      if (!email.trim()) return [];
       return employees
-        .filter((employee) => emailsMatch(employee.email, email))
-        .map((employee) => ({ employeeId: employee.employeeId, email: employee.email }));
+        .filter((employee) => employee.email.length > 0 && emailsMatch(employee.email, email))
+        .map((employee) => ({
+          employeeId: employee.employeeId,
+          email: employee.email,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+        }));
+    },
+    async findEmployeesByName(firstName: string, lastName: string): Promise<EmployeeMatch[]> {
+      calls.push({ port: "employees", method: "findEmployeesByName", detail: { firstName, lastName } });
+      if (!firstName.trim() || !lastName.trim()) return [];
+      return employees
+        .filter((employee) => namesMatch(employee.firstName, firstName) && namesMatch(employee.lastName, lastName))
+        .map((employee) => ({
+          employeeId: employee.employeeId,
+          email: employee.email,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+        }));
     },
     async createEmployee(payload: XeroEmployeePayload, idempotencyKey: string) {
       calls.push({ port: "employees", method: "createEmployee", detail: { idempotencyKey, payload } });
@@ -156,6 +180,8 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
       employees.push({
         employeeId,
         email: payload.Email,
+        firstName: payload.FirstName,
+        lastName: payload.LastName,
         idempotencyKey,
         payload: structuredClone(payload),
         gender: payload.Gender,
@@ -197,17 +223,31 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
       calls.push({ port: "contacts", method: "findContactByNumber", detail: { contactNumber } });
       const found = contacts.find((contact) => contact.contactNumber === contactNumber);
       return found
-        ? { contactId: found.contactId, name: found.name, contactNumber: found.contactNumber }
+        ? { contactId: found.contactId, name: found.name, contactNumber: found.contactNumber, email: found.email }
         : null;
     },
-    async findContactsByName(name: string): Promise<ContactMatch[]> {
-      calls.push({ port: "contacts", method: "findContactsByName", detail: { name } });
+    async findContactsByEmail(email: string): Promise<ContactMatch[]> {
+      calls.push({ port: "contacts", method: "findContactsByEmail", detail: { email } });
+      if (!email.trim()) return [];
       return contacts
-        .filter((contact) => contact.name === name)
+        .filter((contact) => contact.email != null && contact.email.length > 0 && emailsMatch(contact.email, email))
         .map((contact) => ({
           contactId: contact.contactId,
           name: contact.name,
           contactNumber: contact.contactNumber,
+          email: contact.email,
+        }));
+    },
+    async findContactsByName(name: string): Promise<ContactMatch[]> {
+      calls.push({ port: "contacts", method: "findContactsByName", detail: { name } });
+      if (!name.trim()) return [];
+      return contacts
+        .filter((contact) => namesMatch(contact.name, name))
+        .map((contact) => ({
+          contactId: contact.contactId,
+          name: contact.name,
+          contactNumber: contact.contactNumber,
+          email: contact.email,
         }));
     },
     async upsertContact(payload: XeroContactPayload, existingContactId?: string) {
@@ -226,6 +266,7 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
       if (found) {
         found.name = payload.Name;
         found.contactNumber = payload.ContactNumber;
+        found.email = payload.EmailAddress;
         found.payload = structuredClone(payload);
         return { contactId: found.contactId, created: false };
       }
@@ -237,6 +278,7 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
         contactId,
         name: payload.Name,
         contactNumber: payload.ContactNumber,
+        email: payload.EmailAddress,
         payload: structuredClone(payload),
       });
       return { contactId, created: true };

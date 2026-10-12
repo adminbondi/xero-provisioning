@@ -11,12 +11,14 @@ export function dryRunPorts(): Ports {
     employees: {
       listPayrollCalendars: () => blocked("employees.listPayrollCalendars"),
       findEmployeesByEmail: () => blocked("employees.findEmployeesByEmail"),
+      findEmployeesByName: () => blocked("employees.findEmployeesByName"),
       createEmployee: () => blocked("employees.createEmployee"),
       getEmployee: () => blocked("employees.getEmployee"),
       updatePayTemplate: () => blocked("employees.updatePayTemplate"),
     },
     contacts: {
       findContactByNumber: () => blocked("contacts.findContactByNumber"),
+      findContactsByEmail: () => blocked("contacts.findContactsByEmail"),
       findContactsByName: () => blocked("contacts.findContactsByName"),
       upsertContact: () => blocked("contacts.upsertContact"),
     },

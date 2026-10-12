@@ -21,6 +21,7 @@ test("hosting is decided and the pipeline keeps the Zap steps plus finalise and 
     "airtable-record",
     "super-fund",
     "gender",
+    "xero-match",
     "xero-employee",
     "xero-employee-read",
     "xero-employee-finalise",

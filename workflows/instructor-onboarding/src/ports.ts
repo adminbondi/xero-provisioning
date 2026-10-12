@@ -31,6 +31,8 @@ export interface PayrollCalendar {
 export interface EmployeeMatch {
   employeeId: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 export interface SuperMembershipRef {
@@ -49,6 +51,7 @@ export interface EmployeeDetails {
 export interface XeroEmployeePort {
   listPayrollCalendars(): Promise<PayrollCalendar[]>;
   findEmployeesByEmail(email: string): Promise<EmployeeMatch[]>;
+  findEmployeesByName(firstName: string, lastName: string): Promise<EmployeeMatch[]>;
   createEmployee(
     payload: XeroEmployeePayload,
     idempotencyKey: string,
@@ -63,10 +66,12 @@ export interface ContactMatch {
   contactId: string;
   name: string;
   contactNumber: string | null;
+  email?: string | null;
 }
 
 export interface XeroContactPort {
   findContactByNumber(contactNumber: string): Promise<ContactMatch | null>;
+  findContactsByEmail(email: string): Promise<ContactMatch[]>;
   findContactsByName(name: string): Promise<ContactMatch[]>;
   upsertContact(
     payload: XeroContactPayload,

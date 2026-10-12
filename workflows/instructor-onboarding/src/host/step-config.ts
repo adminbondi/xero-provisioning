@@ -2,6 +2,7 @@ export const PIPELINE_STEPS = [
   "airtable-record",
   "super-fund",
   "gender",
+  "xero-match",
   "xero-employee",
   "xero-employee-read",
   "xero-employee-finalise",
@@ -41,6 +42,10 @@ export const STEP_CONFIG: Record<PipelineStepName, StepConfig> = {
   gender: {
     retries: { limit: 0, delay: "1 second", backoff: "constant" },
     timeout: "15 seconds",
+  },
+  "xero-match": {
+    retries: { limit: 5, delay: "30 seconds", backoff: "exponential" },
+    timeout: "2 minutes",
   },
   "xero-employee": {
     retries: { limit: 5, delay: "30 seconds", backoff: "exponential" },

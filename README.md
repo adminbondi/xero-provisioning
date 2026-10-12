@@ -128,9 +128,10 @@ npx wrangler kv namespace create AIRTABLE_CURSOR
 
 A second queue delivery for the same Airtable record does not start a second Workflow, so it does not create a second employee or contact and does not send Slack or email again (`notifications-not-resent`).
 
-- Employees: one POST with `Idempotency-Key` `instructor-onboarding:{recordId}:employee`. The step does not page the employee list (that is a long loop). A retried step hits the same key and does not insert another employee. The create step does not patch name, tax, or address (`employee-not-updated-on-rerun`). A later step GETs the employee and POSTs the full pay template.
-- Contacts: one POST. `ContactNumber` is `airtable:{recordId}` (`contact-number-airtable-record-id`). A retry updates that contact. The step does not search by name.
-- Records the old Zap already created, with no idempotency key and no `ContactNumber`, are not matched. Do not run this beside the Zap, and do not backfill history.
+- Employees and contacts: before either create, look up Xero by email, then by name (`xero-email-skip-name-hold`). An email match skips both creates and logs the Airtable record id and the Xero ids. A name-only match is held and flagged in Slack for a person to check. It is not created, and it is not silently skipped. Dry run does not call Xero.
+- When nothing matches, the employee POST uses `Idempotency-Key` `instructor-onboarding:{recordId}:employee`. A retried step hits the same key and does not insert another employee. The create step does not patch name, tax, or address (`employee-not-updated-on-rerun`). A later step GETs the employee and POSTs the full pay template.
+- When nothing matches, the contact POST uses `ContactNumber` `airtable:{recordId}` (`contact-number-airtable-record-id`). A retry of that contact updates it.
+- Do not run this beside the Zap, and do not backfill history. The hourly poll only picks up rows created after `SAFETY_NET_NOT_BEFORE`. `POST /run` with the ingress token processes one record id immediately and does not move that cursor.
 
 ### Hourly poll
 
@@ -148,7 +149,7 @@ If `SAFETY_NET_NOT_BEFORE` is unset and KV has no watermark, the poll lists noth
 4. Set `SAFETY_NET_NOT_BEFORE` to the switchover instant. Leave it unset until then so the poll cannot scan history. Set `AIRTABLE_TOKEN` as a Worker secret. Do not commit it.
 5. Do not install an Airtable automation. The free plan cannot run scripts.
 6. Run `mode: "shadow"` against fixtures, or later against read-only credentials, and compare payloads with a recent Zap run.
-7. After the explicit go: turn the Zap **off**, then let the hourly poll run. **Do not run both.** This workflow does not look up existing employees by email, so running both can create a second employee. Attaching the cron may need a free cron slot on the Workers Free plan.
+7. After the explicit go: turn the Zap **off**, then let the hourly poll run. **Do not run both.** An email already in Xero is skipped. A name match without that email is held for a person to check. Attaching the cron may need a free cron slot on the Workers Free plan.
 
 ### Oddities preserved (not fixed)
 
@@ -195,10 +196,11 @@ Safety around the Zap, not silent mapping fixes.
 | `pay-template-full-replace` | `updateEmployee` does not document merge versus replace. The step sends the full desired template. |
 | `accounts-payable-tax-input` | No GST flag on Payroll AU. `AccountsPayableTaxType` is `INPUT` for both YES and NO until Thiago confirms. The unconfirmed NO value is BAS Excluded (`BASEXCLUDED`). |
 | `emergency-contact-webhook-only` | Emergency contact cannot be set through the API. It is only on the Patty webhook payload. |
+| `xero-email-skip-name-hold` | Email match skips the create and is logged. Name-only match is held for a person to check and is not created. |
 
 ### Open decisions
 
-Settled, and not repeated here as choices: Cloudflare Worker + Queue + Workflows, hourly Airtable poll into the queue (no automation script), Workflow instance id as the Xero lock, KV watermark for the poll, OAuth refresh token (not a Xero Custom Connection), no custom-code step, `+61` mapping left as the Zap wrote it. Dry-run logs mask TFN, bank account, BSB, ABN, and member number. The live #management Slack post stays the Zap text.
+Settled, and not repeated here as choices: Cloudflare Worker + Queue + Workflows, hourly Airtable poll into the queue (no automation script), Workflow instance id as the Xero lock, KV watermark for the poll, OAuth refresh token (not a Xero Custom Connection), no custom-code step, `+61` mapping left as the Zap wrote it. Dry-run logs mask TFN, bank account, BSB, ABN, and member number. The live success Slack post stays the Zap text. `SLACK_CHANNEL_ID` is that live channel. `SLACK_DRY_RUN_CHANNEL_ID` is required while dry run is on, including preview and held-match alerts. Dry run does not fall through to the live channel. `POST /run` is the authenticated one-record run. It respects dry run and the Workflow instance id, and it does not move the KV watermark. `SAFETY_NET_NOT_BEFORE` stays an env var. The poll uses that value as the initial cursor.
 
 Still open:
 
