@@ -35,7 +35,7 @@ test("step 7 renders Thiago's verbatim instructor email", () => {
   assert.equal(message.html.split("12345678901").length - 1, 2);
   assert.equal(message.html.includes("{"), false);
   assert.equal(message.html.includes("}"), false);
-  assert.equal(message.html.includes("<strong>Bank Account Number:</strong> 12345678"), false);
+  assert.equal(message.html.includes("<strong>Bank Account Number:</strong> 90817263"), false);
   assert.equal(message.html.includes("4caabd49-1d08-4d8b-958b-d933a113e9c9"), false);
   assert.match(message.html, /Hello Avery, <\/p>/);
   assert.match(message.html, /Welcome again to Balance Moves! Thanks for submitting your details - we're looking forward to working with you!/);

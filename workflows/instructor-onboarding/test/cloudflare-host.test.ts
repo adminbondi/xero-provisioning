@@ -1,13 +1,11 @@
 import "./block-network.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
 import { parseAirtableRecord } from "../src/airtable/parse-record.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { bearerMatches, dryRunEnabled, handleIntake, workflowInstanceId } from "../src/host/intake.ts";
 import { startWorkflowForRecord } from "../src/host/queue-consumer.ts";
 import { STEP_CONFIG } from "../src/host/step-config.ts";
-import { runSafetyNet } from "../src/host/safety-net.ts";
 import { lookupGender } from "../src/lookups/gender.ts";
 import { lookupSuperFund } from "../src/lookups/super-funds.ts";
 import { buildContactPayload } from "../src/mappings/contact.ts";
@@ -77,32 +75,6 @@ test("intake rejects a bad token, a bad body, and a non-POST", async () => {
   assert.equal(get.status, 405);
 });
 
-test("the safety net enqueues only rows after the cutoff that have no workflow", async () => {
-  const older = sampleAirtableRecord();
-  older.id = "recOlder00000001";
-  older.createdTime = "2026-09-01T00:00:00.000Z";
-  const started = sampleAirtableRecord();
-  started.id = "recStarted000001";
-  started.createdTime = "2026-10-12T00:00:00.000Z";
-  const missing = sampleAirtableRecord();
-  missing.id = "recMissing000001";
-  missing.createdTime = "2026-10-12T02:00:00.000Z";
-  const { fake } = runtime({ airtableRecords: [older, started, missing] });
-  const enqueued: string[] = [];
-  const result = await runSafetyNet({
-    airtable: fake.ports.airtable,
-    notBefore: "2026-10-01T00:00:00.000Z",
-    hasWorkflow: async (recordId) => recordId === "recStarted000001",
-    enqueue: async (record) => {
-      enqueued.push(record.id);
-    },
-  });
-  assert.equal(result.blocked, false);
-  assert.deepEqual(enqueued, ["recMissing000001"]);
-  assert.equal(fake.calls.some((call) => call.method === "createEmployee"), false);
-  assert.equal(fake.calls.some((call) => call.port === "contacts"), false);
-});
-
 test("each pipeline step has its own retry settings", () => {
   assert.deepEqual(Object.keys(STEP_CONFIG), [...PIPELINE_STEPS]);
   assert.equal(STEP_CONFIG["airtable-record"].retries.limit, 0);
@@ -117,9 +89,6 @@ test("each pipeline step has its own retry settings", () => {
   assert.equal(STEP_CONFIG["patty-webhook"].timeout, "1 minute");
   assert.notEqual(STEP_CONFIG.slack.retries.delay, STEP_CONFIG["xero-employee"].retries.delay);
   assert.equal(STEP_CONFIG.email.retries.backoff, "exponential");
-  const script = readFileSync(new URL("../airtable/on-record-created.js", import.meta.url), "utf8");
-  assert.match(script, /Bearer \$\{ingressToken\}/);
-  assert.match(script, /\/intake|workerUrl/);
 });
 
 test("DRY_RUN defaults on and uses a distinct instance id", async () => {
@@ -158,12 +127,16 @@ test("DRY_RUN returns the would-send payloads and does not write", async () => {
   assert.equal(result.employee.employeeId, null);
   assert.deepEqual(result.contact.payload, buildContactPayload(record));
   assert.equal(result.contact.created, false);
-  assert.deepEqual(
-    { channel: result.slack.channel, text: result.slack.text },
-    buildSlackMessage({ record, employeeId: "{EmployeeID}", contactId: "{ContactID}", config: deps.config! }),
-  );
+  const liveSlack = buildSlackMessage({ record, employeeId: "{EmployeeID}", contactId: "{ContactID}", config: deps.config! });
+  assert.equal(result.slack.channel, liveSlack.channel);
+  assert.notEqual(result.slack.text, liveSlack.text);
+  assert.equal(result.slack.text.includes(record.tfn), false);
   assert.equal(result.slack.sent, false);
-  assert.deepEqual(result.email.message, buildInstructorEmail(record, deps.config!));
+  const liveEmail = buildInstructorEmail(record, deps.config!);
+  assert.equal(result.email.message.from, liveEmail.from);
+  assert.equal(result.email.message.to, liveEmail.to);
+  assert.equal(result.email.message.subject, liveEmail.subject);
+  assert.equal(result.email.message.html.includes(record.abn), false);
   assert.equal(result.email.sent, false);
   assert.equal(fake.calls.some((call) => call.method === "createEmployee"), false);
   assert.equal(fake.calls.some((call) => call.method === "upsertContact"), false);

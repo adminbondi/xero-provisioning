@@ -1,5 +1,7 @@
 import { emailsMatch } from "../match.ts";
 import { signWebhookBody } from "./webhook-sign.ts";
+import { isCreatedTimeFilter } from "./airtable-poll.ts";
+import { redactSensitiveError } from "../sensitive.ts";
 import type {
   AirtableListArgs,
   AirtablePort,
@@ -70,14 +72,6 @@ function asArray(value: unknown, key: string): Record<string, unknown>[] {
   return items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
 }
 
-function redact(text: string): string {
-  return text
-    .replace(/"access_token"\s*:\s*"[^"]*"/g, '"access_token":"[redacted]"')
-    .replace(/"refresh_token"\s*:\s*"[^"]*"/g, '"refresh_token":"[redacted]"')
-    .replace(/"TaxFileNumber"\s*:\s*"[^"]*"/g, '"TaxFileNumber":"[redacted]"')
-    .slice(0, 300);
-}
-
 async function readBody(response: Response): Promise<string> {
   try {
     return await response.text();
@@ -89,7 +83,7 @@ async function readBody(response: Response): Promise<string> {
 async function parseJson(response: Response): Promise<unknown> {
   const text = await readBody(response);
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} from ${response.url}: ${redact(text)}`);
+    throw new Error(`HTTP ${response.status} from ${response.url}: ${redactSensitiveError(text)}`);
   }
   if (!text) return {};
   try {
@@ -160,11 +154,15 @@ function xeroHeaders(token: string, tenantId: string): Headers {
 export function createAirtablePort(options: { fetch: typeof fetch; token: string }): AirtablePort {
   return {
     async listRecords(args: AirtableListArgs) {
-      if (args.view !== null || args.filterByFormula !== null || args.includeAttachments !== true) {
-        throw new Error("Airtable list must include attachments and must not set a view or filter.");
+      if (args.view !== null || args.includeAttachments !== true) {
+        throw new Error("Airtable list must include attachments and must not set a view.");
+      }
+      if (args.filterByFormula !== null && !isCreatedTimeFilter(args.filterByFormula)) {
+        throw new Error("Airtable list filter must be IS_AFTER(CREATED_TIME(), ...).");
       }
       const url = new URL(`https://api.airtable.com/v0/${args.baseId}/${args.tableId}`);
       url.searchParams.set("pageSize", "100");
+      if (args.filterByFormula) url.searchParams.set("filterByFormula", args.filterByFormula);
       if (args.offset) url.searchParams.set("offset", args.offset);
       const response = await options.fetch(url, {
         headers: { Authorization: `Bearer ${options.token}` },

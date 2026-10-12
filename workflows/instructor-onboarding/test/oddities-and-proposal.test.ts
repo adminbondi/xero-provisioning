@@ -2,7 +2,7 @@ import "./block-network.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { SAFETY_NET_CRON } from "../src/config.ts";
+import { AIRTABLE_POLL_CRON } from "../src/config.ts";
 import { HOSTING_DECISION } from "../src/host/decision.ts";
 import { DESIGN_ADDITIONS, ODDITIES } from "../src/oddities.ts";
 import { PIPELINE_STEPS } from "../src/run.ts";
@@ -13,9 +13,10 @@ test("hosting is decided and the pipeline keeps the Zap steps plus finalise and 
   assert.equal(HOSTING_DECISION.host, "cloudflare-worker");
   assert.equal(HOSTING_DECISION.execution, "cloudflare-workflows");
   assert.equal(HOSTING_DECISION.idempotency, "workflow-instance-id");
-  assert.equal(HOSTING_DECISION.durableStore, "none");
+  assert.equal(HOSTING_DECISION.durableStore, "kv-created-time-watermark");
+  assert.equal(HOSTING_DECISION.trigger, "hourly-airtable-poll");
   assert.equal(HOSTING_DECISION.xeroAuth, "oauth-refresh-token");
-  assert.equal(HOSTING_DECISION.safetyNetCron, SAFETY_NET_CRON);
+  assert.equal(HOSTING_DECISION.pollCron, AIRTABLE_POLL_CRON);
   assert.deepEqual(PIPELINE_STEPS, [
     "airtable-record",
     "super-fund",
@@ -43,5 +44,6 @@ test("the READMEs name every preserved oddity and design addition", () => {
   assert.match(rootReadme, /Cloudflare Workflows/);
   assert.match(rootReadme, /do not .*switch/i);
   assert.match(rootReadme, /\+614/);
-  assert.match(packageReadme, /on-record-created\.js/);
+  assert.match(packageReadme, /free plan cannot run scripts/i);
+  assert.match(packageReadme, /AIRTABLE_TOKEN/);
 });

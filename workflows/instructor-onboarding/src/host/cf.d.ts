@@ -47,6 +47,11 @@ declare module "cloudflare:workers" {
     send(message: T): Promise<void>;
   }
 
+  export interface KvNamespace {
+    get(key: string): Promise<string | null>;
+    put(key: string, value: string): Promise<void>;
+  }
+
   export interface QueueMessage<T = unknown> {
     body: T;
     ack(): void;

@@ -11,6 +11,7 @@ import { buildPattyWebhookPayload } from "./mappings/webhook.ts";
 import { buildInstructorEmail } from "./messages/email.ts";
 import { buildSlackMessage } from "./messages/slack.ts";
 import { ODDITIES } from "./oddities.ts";
+import { maskSecretsDeep, maskText, payrollFieldPresence, payrollReplacements } from "./sensitive.ts";
 import type { EmployeeDetails, Ports, XeroEmployeePort } from "./ports.ts";
 import type {
   AirtableApiRecord,
@@ -118,61 +119,61 @@ export async function runOnboardingSteps(
     const parsed = parseAirtableRecord(raw);
     const missing = missingFieldLabels(parsed);
     if (missing.length > 0) throw new MissingFieldsError(missing);
-    logDryRun("airtable-record", parsed, deps);
+    logDryRun("airtable-record", parsed, parsed, deps);
     return parsed;
   });
 
   const superFundId = await step.do("super-fund", STEP_CONFIG["super-fund"], async () => {
     const id = lookupSuperFund(record.superFund);
-    logDryRun("super-fund", { superFund: record.superFund, superFundId: id }, deps);
+    logDryRun("super-fund", { superFund: record.superFund, superFundId: id }, record, deps);
     return id;
   });
 
   const genderCode = await step.do("gender", STEP_CONFIG.gender, async () => {
     const code = lookupGender(record.gender);
-    logDryRun("gender", { gender: record.gender, genderCode: code }, deps);
+    logDryRun("gender", { gender: record.gender, genderCode: code }, record, deps);
     return code;
   });
 
   const employee = await step.do("xero-employee", STEP_CONFIG["xero-employee"], async () => {
     const result = await createEmployee(record, superFundId, genderCode, config, deps, now);
-    logDryRun("xero-employee", result.payload, deps);
+    logDryRun("xero-employee", result.payload, record, deps);
     return result;
   });
 
   const employeeRead = await step.do("xero-employee-read", STEP_CONFIG["xero-employee-read"], async () => {
     const result = await readEmployee(employee.employeeId, superFundId, deps);
-    logDryRun("xero-employee-read", result, deps);
+    logDryRun("xero-employee-read", result, record, deps);
     return result;
   });
 
   const payTemplate = await step.do("xero-employee-finalise", STEP_CONFIG["xero-employee-finalise"], async () => {
     const result = await finalisePayTemplate(employee.employeeId, employeeRead.superMembershipId, deps);
-    logDryRun("xero-employee-finalise", result.template, deps);
+    logDryRun("xero-employee-finalise", result.template, record, deps);
     return result;
   });
 
   const contact = await step.do("xero-contact", STEP_CONFIG["xero-contact"], async () => {
     const result = await upsertContact(record, deps);
-    logDryRun("xero-contact", result.payload, deps);
+    logDryRun("xero-contact", result.payload, record, deps);
     return result;
   });
 
   const slack = await step.do("slack", STEP_CONFIG.slack, async () => {
     const result = await postSlack(record, employee.employeeId, contact.contactId, config, deps);
-    logDryRun("slack", { channel: result.channel, text: result.text }, deps);
+    logDryRun("slack", { channel: result.channel, text: result.text }, record, deps);
     return result;
   });
 
   const email = await step.do("email", STEP_CONFIG.email, async () => {
     const result = await sendEmail(record, config, deps);
-    logDryRun("email", result.message, deps);
+    logDryRun("email", result.message, record, deps);
     return result;
   });
 
   const webhook = await step.do("patty-webhook", STEP_CONFIG["patty-webhook"], async () => {
     const result = await postPattyWebhook(record, employee.employeeId, contact.contactId, config.orgShortCode, deps);
-    logDryRun("patty-webhook", result.payload, deps);
+    logDryRun("patty-webhook", result.payload, record, deps);
     return result;
   });
 
@@ -335,21 +336,36 @@ async function postSlack(
     contactId: contactId ?? "{ContactID}",
     config,
   });
-  if (deps.mode === "shadow") return { ...message, sent: false };
+  if (deps.mode === "shadow") {
+    return { channel: message.channel, text: maskText(message.text, payrollReplacements(record)), sent: false };
+  }
   await deps.ports.slack.postMessage(message);
   return { ...message, sent: true };
 }
 
 async function sendEmail(record: InstructorRecord, config: WorkflowConfig, deps: RunDeps): Promise<EmailStepResult> {
   const message = buildInstructorEmail(record, config);
-  if (deps.mode === "shadow") return { sent: false, message };
+  if (deps.mode === "shadow") {
+    return {
+      sent: false,
+      message: { ...message, html: maskText(message.html, payrollReplacements(record)) },
+    };
+  }
   await deps.ports.email.send(message);
   return { sent: true, message };
 }
 
-function logDryRun(step: string, wouldSend: unknown, deps: RunDeps): void {
+function logDryRun(step: string, wouldSend: unknown, record: InstructorRecord, deps: RunDeps): void {
   if (deps.mode !== "shadow") return;
-  console.log(JSON.stringify({ event: "dry-run-would-send", step, wouldSend }));
+  const replacements = payrollReplacements(record);
+  console.log(
+    JSON.stringify({
+      event: "dry-run-would-send",
+      step,
+      present: payrollFieldPresence(record),
+      wouldSend: maskSecretsDeep(wouldSend, replacements),
+    }),
+  );
 }
 
 function activeFlags(genderCode: string): string[] {

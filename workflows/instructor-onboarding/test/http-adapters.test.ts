@@ -148,7 +148,7 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
           ContactGroups: Array<{ Name: string }>;
         }>;
       };
-      assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200012345678");
+      assert.equal(parsed.Contacts[0]?.BankAccountDetails, "06200090817263");
       assert.equal(parsed.Contacts[0]?.TaxNumber, "12345678901");
       assert.equal(parsed.Contacts[0]?.AccountsPayableTaxType, "INPUT");
       assert.equal(parsed.Contacts[0]?.Phones[0]?.PhoneNumber, "+610412345678");

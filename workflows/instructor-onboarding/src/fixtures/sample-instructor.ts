@@ -21,7 +21,7 @@ const SAMPLE: AirtableApiRecord = {
     ABN: "12345678901",
     "ABN Registered for GST": [{ name: "YES" }],
     BSB: "062000",
-    Account: "12345678",
+    Account: "90817263",
     "Bank Account Number": "55556666",
     "Emergency Contact Name": "Sam Nguyen",
     "Emergency Contact Mobile": "0499888777",

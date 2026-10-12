@@ -30,7 +30,13 @@
       }
     ]
   },
+  "kv_namespaces": [
+    {
+      "binding": "AIRTABLE_CURSOR",
+      "id": "00000000000000000000000000000000"
+    }
+  ],
   "triggers": {
-    "crons": ["0 21 * * *"]
+    "crons": ["0 * * * *"]
   }
 }

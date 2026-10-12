@@ -13,7 +13,8 @@ export interface AirtableListArgs {
   tableId: string;
   includeAttachments: true;
   view: null;
-  filterByFormula: null;
+  /** Null, or the created-time formula from `createdAfterFormula`. No other filter. */
+  filterByFormula: string | null;
   offset?: string;
 }
 
