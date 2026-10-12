@@ -242,6 +242,7 @@ test("the go-live cutoff is the env value passed in, and the production config d
         vars: Record<string, string>;
         triggers: { crons: string[] };
         queues: { consumers: Array<{ queue: string }> };
+        kv_namespaces: Array<{ binding: string; id: string }>;
       };
     };
   };
@@ -254,6 +255,8 @@ test("the go-live cutoff is the env value passed in, and the production config d
   assert.equal(config.env.preview.vars.SLACK_DRY_RUN_CHANNEL_ID, "C0C8CEZN64E");
   assert.deepEqual(config.env.preview.triggers.crons, []);
   assert.equal(config.env.preview.queues.consumers[0]?.queue, "instructor-onboarding-preview-intake");
+  assert.equal(config.env.preview.kv_namespaces[0]?.binding, "AIRTABLE_CURSOR");
+  assert.equal(config.env.preview.kv_namespaces[0]?.id, "4c20b4595aa54066a791d522e09e52ed");
   assert.match(wrangler, /--keep-vars/);
   const previewCutoff = "2026-03-01T00:00:00.000Z";
   assert.equal(createdAfterFormula(previewCutoff), "IS_AFTER(CREATED_TIME(), '2026-03-01T00:00:00.000Z')");
