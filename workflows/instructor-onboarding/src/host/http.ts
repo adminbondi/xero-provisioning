@@ -1,4 +1,4 @@
-import { emailsMatch } from "../match.ts";
+import { emailsMatch, namesMatch } from "../match.ts";
 import { signWebhookBody } from "./webhook-sign.ts";
 import { isCreatedTimeFilter } from "./airtable-poll.ts";
 import { redactSensitiveError } from "../sensitive.ts";
@@ -33,6 +33,14 @@ const GMAIL_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 const SLACK_POST_URL = "https://slack.com/api/chat.postMessage";
 const PAGE_CAP = 50;
+
+/**
+ * Native fetch throws "Illegal invocation" when called as `options.fetch(...)`,
+ * because `this` is the options object. Always call it with `this` set to the global object.
+ */
+export function bindFetch(fetchImpl: typeof fetch): typeof fetch {
+  return (input, init) => fetchImpl.call(globalThis, input, init);
+}
 
 export const REQUIRED_LIVE_ENV = [
   "AIRTABLE_TOKEN",
@@ -103,7 +111,8 @@ export async function refreshOAuthToken(
   url: string,
   params: Record<string, string>,
 ): Promise<TokenResult> {
-  const response = await fetchImpl(url, {
+  const bound = bindFetch(fetchImpl);
+  const response = await bound(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
@@ -152,6 +161,7 @@ function xeroHeaders(token: string, tenantId: string): Headers {
 }
 
 export function createAirtablePort(options: { fetch: typeof fetch; token: string }): AirtablePort {
+  const fetchImpl = bindFetch(options.fetch);
   return {
     async listRecords(args: AirtableListArgs) {
       if (args.view !== null || args.includeAttachments !== true) {
@@ -164,7 +174,7 @@ export function createAirtablePort(options: { fetch: typeof fetch; token: string
       url.searchParams.set("pageSize", "100");
       if (args.filterByFormula) url.searchParams.set("filterByFormula", args.filterByFormula);
       if (args.offset) url.searchParams.set("offset", args.offset);
-      const response = await options.fetch(url, {
+      const response = await fetchImpl(url, {
         headers: { Authorization: `Bearer ${options.token}` },
       });
       const json = asRecord(await parseJson(response));
@@ -174,6 +184,30 @@ export function createAirtablePort(options: { fetch: typeof fetch; token: string
       };
     },
   };
+}
+
+/** One Instructors row by id. Used by the manual run. Not the hourly list. */
+export async function fetchAirtableRecord(options: {
+  fetch: typeof fetch;
+  token: string;
+  baseId: string;
+  tableId: string;
+  recordId: string;
+}): Promise<AirtableApiRecord> {
+  const fetchImpl = bindFetch(options.fetch);
+  const url = `https://api.airtable.com/v0/${options.baseId}/${options.tableId}/${encodeURIComponent(options.recordId)}`;
+  const response = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${options.token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Airtable record GET failed with HTTP ${response.status}.`);
+  }
+  const json = asRecord(await parseJson(response));
+  const [record] = asAirtableRecords([json]);
+  if (!record || record.id !== options.recordId) {
+    throw new Error("Airtable record GET did not return the requested record.");
+  }
+  return record;
 }
 
 function asAirtableRecords(value: unknown): AirtableApiRecord[] {
@@ -192,16 +226,44 @@ function asAirtableRecords(value: unknown): AirtableApiRecord[] {
   return records;
 }
 
+function readEmployeeMatch(row: Record<string, unknown>): {
+  employeeId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+} {
+  return {
+    employeeId: String(row.EmployeeID ?? ""),
+    email: typeof row.Email === "string" ? row.Email : "",
+    firstName: typeof row.FirstName === "string" ? row.FirstName : "",
+    lastName: typeof row.LastName === "string" ? row.LastName : "",
+  };
+}
+
 export function createXeroEmployeePort(options: {
   fetch: typeof fetch;
   tenantId: string;
   getAccessToken: () => Promise<string>;
 }): XeroEmployeePort {
+  const fetchImpl = bindFetch(options.fetch);
+  async function listEmployees(): Promise<ReturnType<typeof readEmployeeMatch>[]> {
+    const rows = await listPages(async (page) => {
+      const token = await options.getAccessToken();
+      const json = await parseJson(
+        await fetchImpl(`${PAYROLL_BASE}/Employees?page=${page}`, {
+          headers: xeroHeaders(token, options.tenantId),
+        }),
+      );
+      return asArray(json, "Employees");
+    });
+    return rows.map(readEmployeeMatch);
+  }
+
   return {
     async listPayrollCalendars(): Promise<PayrollCalendar[]> {
       const token = await options.getAccessToken();
       const json = await parseJson(
-        await options.fetch(`${PAYROLL_BASE}/PayrollCalendars`, { headers: xeroHeaders(token, options.tenantId) }),
+        await fetchImpl(`${PAYROLL_BASE}/PayrollCalendars`, { headers: xeroHeaders(token, options.tenantId) }),
       );
       return asArray(json, "PayrollCalendars").map((calendar) => ({
         payrollCalendarId: String(calendar.PayrollCalendarID ?? ""),
@@ -210,18 +272,14 @@ export function createXeroEmployeePort(options: {
       }));
     },
     async findEmployeesByEmail(email: string) {
-      const rows = await listPages(async (page) => {
-        const token = await options.getAccessToken();
-        const json = await parseJson(
-          await options.fetch(`${PAYROLL_BASE}/Employees?page=${page}`, {
-            headers: xeroHeaders(token, options.tenantId),
-          }),
-        );
-        return asArray(json, "Employees");
-      });
-      return rows
-        .filter((row) => typeof row.Email === "string" && emailsMatch(row.Email, email))
-        .map((row) => ({ employeeId: String(row.EmployeeID ?? ""), email: String(row.Email) }));
+      if (!email.trim()) return [];
+      const rows = await listEmployees();
+      return rows.filter((row) => row.email.length > 0 && emailsMatch(row.email, email));
+    },
+    async findEmployeesByName(firstName: string, lastName: string) {
+      if (!firstName.trim() || !lastName.trim()) return [];
+      const rows = await listEmployees();
+      return rows.filter((row) => namesMatch(row.firstName, firstName) && namesMatch(row.lastName, lastName));
     },
     async createEmployee(payload: XeroEmployeePayload, idempotencyKey: string) {
       const token = await options.getAccessToken();
@@ -229,7 +287,7 @@ export function createXeroEmployeePort(options: {
       headers.set("Content-Type", "application/json");
       headers.set("Idempotency-Key", idempotencyKey);
       const json = await parseJson(
-        await options.fetch(`${PAYROLL_BASE}/Employees`, {
+        await fetchImpl(`${PAYROLL_BASE}/Employees`, {
           method: "POST",
           headers,
           body: JSON.stringify({ Employees: [payload] }),
@@ -244,7 +302,7 @@ export function createXeroEmployeePort(options: {
     async getEmployee(employeeId: string): Promise<EmployeeDetails> {
       const token = await options.getAccessToken();
       const json = await parseJson(
-        await options.fetch(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
+        await fetchImpl(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
           headers: xeroHeaders(token, options.tenantId),
         }),
       );
@@ -262,7 +320,7 @@ export function createXeroEmployeePort(options: {
       const headers = xeroHeaders(token, options.tenantId);
       headers.set("Content-Type", "application/json");
       await parseJson(
-        await options.fetch(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
+        await fetchImpl(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
           method: "POST",
           headers,
           body: JSON.stringify({ Employees: [{ EmployeeID: employeeId, PayTemplate: template }] }),
@@ -289,11 +347,12 @@ export function createXeroContactPort(options: {
   tenantId: string;
   getAccessToken: () => Promise<string>;
 }): XeroContactPort {
+  const fetchImpl = bindFetch(options.fetch);
   async function listContacts(): Promise<ContactMatch[]> {
     const rows = await listPages(async (page) => {
       const token = await options.getAccessToken();
       const json = await parseJson(
-        await options.fetch(`${ACCOUNTING_BASE}/Contacts?page=${page}`, {
+        await fetchImpl(`${ACCOUNTING_BASE}/Contacts?page=${page}`, {
           headers: xeroHeaders(token, options.tenantId),
         }),
       );
@@ -303,6 +362,7 @@ export function createXeroContactPort(options: {
       contactId: String(row.ContactID ?? ""),
       name: String(row.Name ?? ""),
       contactNumber: typeof row.ContactNumber === "string" ? row.ContactNumber : null,
+      email: typeof row.EmailAddress === "string" ? row.EmailAddress : null,
     }));
   }
 
@@ -311,9 +371,15 @@ export function createXeroContactPort(options: {
       const contacts = await listContacts();
       return contacts.find((contact) => contact.contactNumber === contactNumber) ?? null;
     },
-    async findContactsByName(name: string) {
+    async findContactsByEmail(email: string) {
+      if (!email.trim()) return [];
       const contacts = await listContacts();
-      return contacts.filter((contact) => contact.name === name);
+      return contacts.filter((contact) => typeof contact.email === "string" && contact.email.length > 0 && emailsMatch(contact.email, email));
+    },
+    async findContactsByName(name: string) {
+      if (!name.trim()) return [];
+      const contacts = await listContacts();
+      return contacts.filter((contact) => namesMatch(contact.name, name));
     },
     async upsertContact(payload: XeroContactPayload, existingContactId?: string) {
       const token = await options.getAccessToken();
@@ -321,7 +387,7 @@ export function createXeroContactPort(options: {
       headers.set("Content-Type", "application/json");
       const body = existingContactId ? { ...payload, ContactID: existingContactId } : payload;
       const json = await parseJson(
-        await options.fetch(`${ACCOUNTING_BASE}/Contacts`, {
+        await fetchImpl(`${ACCOUNTING_BASE}/Contacts`, {
           method: "POST",
           headers,
           body: JSON.stringify({ Contacts: [body] }),
@@ -341,13 +407,14 @@ export function createPattyWebhookPort(options: {
   url: string;
   signingSecret: string;
 }): WebhookPort {
+  const fetchImpl = bindFetch(options.fetch);
   return {
     async post(payload: PattyWebhookPayload) {
       if (!options.url) throw new Error("PATTY_WEBHOOK_URL is not set.");
       if (!options.signingSecret) throw new Error("PATTY_WEBHOOK_SIGNING_SECRET is not set.");
       const body = JSON.stringify(payload);
       const signature = await signWebhookBody(options.signingSecret, body);
-      const response = await options.fetch(options.url, {
+      const response = await fetchImpl(options.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -364,9 +431,10 @@ export function createPattyWebhookPort(options: {
 }
 
 export function createSlackPort(options: { fetch: typeof fetch; token: string }): SlackPort {
+  const fetchImpl = bindFetch(options.fetch);
   return {
     async postMessage(message: SlackMessage) {
-      const response = await options.fetch(SLACK_POST_URL, {
+      const response = await fetchImpl(SLACK_POST_URL, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${options.token}`,
@@ -402,12 +470,13 @@ export function toBase64Url(value: string): string {
 }
 
 export function createGmailPort(options: { fetch: typeof fetch; getAccessToken: () => Promise<string> }): EmailPort {
+  const fetchImpl = bindFetch(options.fetch);
   return {
     async send(message: OutboundEmail) {
       const token = await options.getAccessToken();
       const json = asRecord(
         await parseJson(
-          await options.fetch(GMAIL_SEND_URL, {
+          await fetchImpl(GMAIL_SEND_URL, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -430,6 +499,7 @@ export function createLivePorts(
   fetchImpl: typeof fetch,
   hooks: LivePortHooks = {},
 ): Ports {
+  const boundFetch = bindFetch(fetchImpl);
   const missing = missingLiveEnv(env);
   if (missing.length > 0) {
     throw new Error(`Missing env vars: ${missing.join(", ")}`);
@@ -438,7 +508,7 @@ export function createLivePorts(
   const xeroRefresh = live.XERO_REFRESH_TOKEN;
   const gmailRefresh = live.GMAIL_REFRESH_TOKEN;
   const getXeroToken = cacheToken(async () => {
-    const token = await refreshOAuthToken(fetchImpl, XERO_TOKEN_URL, {
+    const token = await refreshOAuthToken(boundFetch, XERO_TOKEN_URL, {
       grant_type: "refresh_token",
       refresh_token: xeroRefresh,
       client_id: live.XERO_CLIENT_ID,
@@ -453,7 +523,7 @@ export function createLivePorts(
     return token.accessToken;
   });
   const getGmailToken = cacheToken(async () => {
-    const token = await refreshOAuthToken(fetchImpl, GMAIL_TOKEN_URL, {
+    const token = await refreshOAuthToken(boundFetch, GMAIL_TOKEN_URL, {
       grant_type: "refresh_token",
       refresh_token: gmailRefresh,
       client_id: live.GMAIL_CLIENT_ID,
@@ -468,21 +538,21 @@ export function createLivePorts(
     return token.accessToken;
   });
   return {
-    airtable: createAirtablePort({ fetch: fetchImpl, token: live.AIRTABLE_TOKEN }),
+    airtable: createAirtablePort({ fetch: boundFetch, token: live.AIRTABLE_TOKEN }),
     employees: createXeroEmployeePort({
-      fetch: fetchImpl,
+      fetch: boundFetch,
       tenantId: live.XERO_TENANT_ID,
       getAccessToken: getXeroToken,
     }),
     contacts: createXeroContactPort({
-      fetch: fetchImpl,
+      fetch: boundFetch,
       tenantId: live.XERO_TENANT_ID,
       getAccessToken: getXeroToken,
     }),
-    slack: createSlackPort({ fetch: fetchImpl, token: live.SLACK_BOT_TOKEN }),
-    email: createGmailPort({ fetch: fetchImpl, getAccessToken: getGmailToken }),
+    slack: createSlackPort({ fetch: boundFetch, token: live.SLACK_BOT_TOKEN }),
+    email: createGmailPort({ fetch: boundFetch, getAccessToken: getGmailToken }),
     webhook: createPattyWebhookPort({
-      fetch: fetchImpl,
+      fetch: boundFetch,
       url: env.PATTY_WEBHOOK_URL ?? "",
       signingSecret: env.PATTY_WEBHOOK_SIGNING_SECRET ?? "",
     }),

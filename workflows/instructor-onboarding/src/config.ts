@@ -72,6 +72,24 @@ export function defaultConfig(): WorkflowConfig {
   };
 }
 
+/**
+ * Channel for this run. Dry-run never falls through to the live channel.
+ * A missing id fails closed so a preview cannot post into #management.
+ */
+export function slackChannelForRun(
+  env: Readonly<{ SLACK_CHANNEL_ID?: string; SLACK_DRY_RUN_CHANNEL_ID?: string }>,
+  dryRun: boolean,
+): string {
+  if (dryRun) {
+    const channel = env.SLACK_DRY_RUN_CHANNEL_ID?.trim() ?? "";
+    if (!channel) throw new Error("SLACK_DRY_RUN_CHANNEL_ID is not set.");
+    return channel;
+  }
+  const channel = env.SLACK_CHANNEL_ID?.trim() ?? "";
+  if (!channel) throw new Error("SLACK_CHANNEL_ID is not set.");
+  return channel;
+}
+
 export function resolveConfig(env: Readonly<Record<string, string | undefined>> = {}): WorkflowConfig {
   const base = defaultConfig();
   return {

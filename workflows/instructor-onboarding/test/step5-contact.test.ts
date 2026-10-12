@@ -39,21 +39,43 @@ test("step 5 builds the create/update contact, including concatenated bank detai
   assert.deepEqual(payload.ContactGroups, [{ Name: "Contractors" }]);
 });
 
-test("step 5 upserts once by ContactNumber and does not search by name", async () => {
-  const { fake, deps } = runtime({
-    contacts: [{ contactId: "contact-from-zap", name: "Avery Nguyen", contactNumber: null }],
+test("a name-only Xero match is held and a different person is still created", async () => {
+  const held = runtime({
+    contacts: [{ contactId: "contact-from-zap", name: "Avery Nguyen", contactNumber: null, email: "someone.else@example.com" }],
   });
-  const result = await runInstructorOnboarding(sampleAirtableRecord(), deps);
-  assert.equal(fake.calls.some((call) => call.method === "findContactsByName"), false);
-  assert.equal(fake.calls.filter((call) => call.method === "upsertContact").length, 1);
-  assert.equal(result.contact.created, true);
-  assert.equal(fake.contacts.length, 2);
+  const result = await runInstructorOnboarding(sampleAirtableRecord(), {
+    ...held.deps,
+    config: { ...held.deps.config!, slackChannelId: "C-DRY-TEST" },
+  });
+  assert.equal(result.match.disposition, "hold-name");
+  assert.equal(result.employee.action, "hold-name");
+  assert.equal(result.employee.created, false);
+  assert.equal(result.contact.action, "hold-name");
+  assert.equal(result.contact.contactId, "contact-from-zap");
+  assert.equal(result.contact.created, false);
+  assert.equal(held.fake.calls.some((call) => call.method === "findContactsByName"), true);
+  assert.equal(held.fake.calls.some((call) => call.method === "upsertContact"), false);
+  assert.equal(held.fake.calls.some((call) => call.method === "createEmployee"), false);
+  assert.equal(held.fake.calls.some((call) => call.method === "send"), false);
+  assert.equal(held.fake.slack.length, 1);
+  assert.equal(held.fake.slack[0]?.channel, "C-DRY-TEST");
+  assert.match(held.fake.slack[0]?.text ?? "", /held for a person to check/);
+  assert.equal(held.fake.slack[0]?.text.includes("has successfully been created"), false);
+  const record = parseAirtableRecord(sampleAirtableRecord());
+  for (const secret of [record.tfn, record.account, record.bsb, record.abn, record.memberNumber]) {
+    assert.equal(held.fake.slack[0]?.text.includes(secret), false);
+  }
+  assert.equal(held.fake.contacts.length, 1);
 
-  const again = await runInstructorOnboarding(sampleAirtableRecord(), deps);
-  assert.equal(again.contact.created, false);
-  assert.equal(again.contact.action, "update");
-  assert.equal(again.contact.contactId, result.contact.contactId);
-  assert.equal(fake.contacts.length, 2);
+  const created = runtime({
+    contacts: [{ contactId: "contact-other", name: "Other Person", contactNumber: "airtable:recInstructor001", email: "other.person@example.com" }],
+  });
+  const update = await runInstructorOnboarding(sampleAirtableRecord(), created.deps);
+  assert.equal(update.match.disposition, "create");
+  assert.equal(update.contact.action, "update");
+  assert.equal(update.contact.created, false);
+  assert.equal(update.contact.contactId, "contact-other");
+  assert.equal(created.fake.calls.filter((call) => call.method === "upsertContact").length, 1);
 });
 
 function payloadWouldChange(): boolean {

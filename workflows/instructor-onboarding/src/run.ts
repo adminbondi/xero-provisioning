@@ -5,11 +5,11 @@ import { MissingFieldsError, PayrollCalendarError } from "./errors.ts";
 import { PIPELINE_STEPS, STEP_CONFIG, type StepDo } from "./host/step-config.ts";
 import { lookupGender } from "./lookups/gender.ts";
 import { lookupSuperFund } from "./lookups/super-funds.ts";
-import { buildContactPayload } from "./mappings/contact.ts";
+import { buildContactPayload, instructorFullName } from "./mappings/contact.ts";
 import { buildEmployeePayload, buildPayTemplate, employeeIdempotencyKey } from "./mappings/employee.ts";
 import { buildPattyWebhookPayload } from "./mappings/webhook.ts";
 import { buildInstructorEmail } from "./messages/email.ts";
-import { buildSlackMessage } from "./messages/slack.ts";
+import { buildSlackMessage, buildXeroHoldMessage } from "./messages/slack.ts";
 import { ODDITIES } from "./oddities.ts";
 import { maskSecretsDeep, maskText, payrollFieldPresence, payrollReplacements } from "./sensitive.ts";
 import type { EmployeeDetails, Ports, XeroEmployeePort } from "./ports.ts";
@@ -39,8 +39,15 @@ export interface RunDeps {
   stepCache?: Map<string, unknown>;
 }
 
+export interface XeroMatchResult {
+  disposition: "create" | "skip-email" | "hold-name";
+  reason: "dry-run" | "no-match" | "email" | "name";
+  employeeIds: string[];
+  contactIds: string[];
+}
+
 interface EmployeeStepResult {
-  action: "create" | "reuse";
+  action: "create" | "reuse" | "skip-email" | "hold-name";
   employeeId: string | null;
   created: boolean;
   payload: XeroEmployeePayload;
@@ -48,7 +55,7 @@ interface EmployeeStepResult {
 }
 
 interface ContactStepResult {
-  action: "create" | "update";
+  action: "create" | "update" | "skip-email" | "hold-name";
   contactId: string | null;
   created: boolean;
   payload: XeroContactPayload;
@@ -135,44 +142,50 @@ export async function runOnboardingSteps(
     return code;
   });
 
+  const match = await step.do("xero-match", STEP_CONFIG["xero-match"], async () => {
+    const result = await matchExistingXero(record, deps);
+    logDryRun("xero-match", result, record, deps);
+    return result;
+  });
+
   const employee = await step.do("xero-employee", STEP_CONFIG["xero-employee"], async () => {
-    const result = await createEmployee(record, superFundId, genderCode, config, deps, now);
+    const result = await createEmployee(record, superFundId, genderCode, config, deps, now, match);
     logDryRun("xero-employee", result.payload, record, deps);
     return result;
   });
 
   const employeeRead = await step.do("xero-employee-read", STEP_CONFIG["xero-employee-read"], async () => {
-    const result = await readEmployee(employee.employeeId, superFundId, deps);
+    const result = await readEmployee(employee.employeeId, superFundId, deps, match);
     logDryRun("xero-employee-read", result, record, deps);
     return result;
   });
 
   const payTemplate = await step.do("xero-employee-finalise", STEP_CONFIG["xero-employee-finalise"], async () => {
-    const result = await finalisePayTemplate(employee.employeeId, employeeRead.superMembershipId, deps);
+    const result = await finalisePayTemplate(employee.employeeId, employeeRead.superMembershipId, deps, match);
     logDryRun("xero-employee-finalise", result.template, record, deps);
     return result;
   });
 
   const contact = await step.do("xero-contact", STEP_CONFIG["xero-contact"], async () => {
-    const result = await upsertContact(record, deps);
+    const result = await upsertContact(record, deps, match);
     logDryRun("xero-contact", result.payload, record, deps);
     return result;
   });
 
   const slack = await step.do("slack", STEP_CONFIG.slack, async () => {
-    const result = await postSlack(record, employee.employeeId, contact.contactId, config, deps);
+    const result = await postSlack(record, employee.employeeId, contact.contactId, config, deps, match);
     logDryRun("slack", { channel: result.channel, text: result.text }, record, deps);
     return result;
   });
 
   const email = await step.do("email", STEP_CONFIG.email, async () => {
-    const result = await sendEmail(record, config, deps);
+    const result = await sendEmail(record, config, deps, match);
     logDryRun("email", result.message, record, deps);
     return result;
   });
 
   const webhook = await step.do("patty-webhook", STEP_CONFIG["patty-webhook"], async () => {
-    const result = await postPattyWebhook(record, employee.employeeId, contact.contactId, config.orgShortCode, deps);
+    const result = await postPattyWebhook(record, employee.employeeId, contact.contactId, config.orgShortCode, deps, match);
     logDryRun("patty-webhook", result.payload, record, deps);
     return result;
   });
@@ -184,6 +197,7 @@ export async function runOnboardingSteps(
     steps: [...PIPELINE_STEPS],
     superFundId,
     genderCode,
+    match,
     startDate: {
       zapierExpression: ZAPIER_START_DATE_EXPRESSION,
       timeZone: config.startDateTimeZone,
@@ -209,6 +223,63 @@ export async function runInstructorOnboarding(raw: AirtableApiRecord, deps: RunD
   return runOnboardingSteps(raw, deps);
 }
 
+function uniqueIds(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function blocked(match: XeroMatchResult): boolean {
+  return match.disposition !== "create";
+}
+
+/**
+ * Email first, then name. Dry run does not call Xero (a token refresh would rotate the live secret).
+ * An email match skips. A name-only match is held. Neither path creates.
+ */
+async function matchExistingXero(record: InstructorRecord, deps: RunDeps): Promise<XeroMatchResult> {
+  if (deps.mode === "shadow") {
+    return { disposition: "create", reason: "dry-run", employeeIds: [], contactIds: [] };
+  }
+  const employeesByEmail = await deps.ports.employees.findEmployeesByEmail(record.email);
+  const contactsByEmail = await deps.ports.contacts.findContactsByEmail(record.email);
+  if (employeesByEmail.length > 0 || contactsByEmail.length > 0) {
+    const result: XeroMatchResult = {
+      disposition: "skip-email",
+      reason: "email",
+      employeeIds: uniqueIds(employeesByEmail.map((employee) => employee.employeeId)),
+      contactIds: uniqueIds(contactsByEmail.map((contact) => contact.contactId)),
+    };
+    console.log(
+      JSON.stringify({
+        event: "xero-email-skip",
+        recordId: record.recordId,
+        employeeIds: result.employeeIds,
+        contactIds: result.contactIds,
+      }),
+    );
+    return result;
+  }
+  const employeesByName = await deps.ports.employees.findEmployeesByName(record.firstName, record.lastName);
+  const contactsByName = await deps.ports.contacts.findContactsByName(instructorFullName(record));
+  if (employeesByName.length > 0 || contactsByName.length > 0) {
+    const result: XeroMatchResult = {
+      disposition: "hold-name",
+      reason: "name",
+      employeeIds: uniqueIds(employeesByName.map((employee) => employee.employeeId)),
+      contactIds: uniqueIds(contactsByName.map((contact) => contact.contactId)),
+    };
+    console.log(
+      JSON.stringify({
+        event: "xero-name-hold",
+        recordId: record.recordId,
+        employeeIds: result.employeeIds,
+        contactIds: result.contactIds,
+      }),
+    );
+    return result;
+  }
+  return { disposition: "create", reason: "no-match", employeeIds: [], contactIds: [] };
+}
+
 async function createEmployee(
   record: InstructorRecord,
   superFundId: string,
@@ -216,10 +287,20 @@ async function createEmployee(
   config: WorkflowConfig,
   deps: RunDeps,
   now: Date,
+  match: XeroMatchResult,
 ): Promise<EmployeeStepResult> {
   const payrollCalendarId = requireCalendarId(config);
   const startDate = resolveStartDate(now, config.startDateTimeZone);
   const payload = buildEmployeePayload({ record, genderCode, superFundId, payrollCalendarId, startDate });
+  if (blocked(match)) {
+    return {
+      action: match.disposition,
+      employeeId: match.employeeIds[0] ?? null,
+      created: false,
+      payload,
+      startDate,
+    };
+  }
   if (deps.mode === "shadow") {
     return { action: "create", employeeId: null, created: false, payload, startDate };
   }
@@ -253,8 +334,9 @@ async function readEmployee(
   employeeId: string | null,
   superFundId: string,
   deps: RunDeps,
+  match: XeroMatchResult,
 ): Promise<EmployeeReadResult> {
-  if (deps.mode === "shadow") {
+  if (deps.mode === "shadow" || blocked(match)) {
     return {
       checked: false,
       employeeId: null,
@@ -284,8 +366,9 @@ async function finalisePayTemplate(
   employeeId: string | null,
   superMembershipId: string | null,
   deps: RunDeps,
+  match: XeroMatchResult,
 ): Promise<PayTemplateResult> {
-  if (deps.mode === "shadow") {
+  if (deps.mode === "shadow" || blocked(match)) {
     return { updated: false, template: buildPayTemplate(null) };
   }
   if (!employeeId || !superMembershipId) {
@@ -302,15 +385,24 @@ async function postPattyWebhook(
   contactId: string | null,
   orgShortCode: string,
   deps: RunDeps,
+  match: XeroMatchResult,
 ): Promise<WebhookResult> {
   const payload = buildPattyWebhookPayload({ record, employeeId, contactId, orgShortCode });
-  if (deps.mode === "shadow") return { posted: false, payload };
+  if (deps.mode === "shadow" || blocked(match)) return { posted: false, payload };
   await deps.ports.webhook.post(payload);
   return { posted: true, payload };
 }
 
-async function upsertContact(record: InstructorRecord, deps: RunDeps): Promise<ContactStepResult> {
+async function upsertContact(record: InstructorRecord, deps: RunDeps, match: XeroMatchResult): Promise<ContactStepResult> {
   const payload = buildContactPayload(record);
+  if (blocked(match)) {
+    return {
+      action: match.disposition,
+      contactId: match.contactIds[0] ?? null,
+      created: false,
+      payload,
+    };
+  }
   if (deps.mode === "shadow") {
     return { action: "create", contactId: null, created: false, payload };
   }
@@ -323,13 +415,47 @@ async function upsertContact(record: InstructorRecord, deps: RunDeps): Promise<C
   };
 }
 
+function emptyEmail(record: InstructorRecord, config: WorkflowConfig): EmailStepResult {
+  return {
+    sent: false,
+    message: {
+      from: config.emailFrom,
+      fromName: config.emailFromName,
+      to: record.email,
+      cc: [],
+      bcc: [],
+      subject: "",
+      html: "",
+    },
+  };
+}
+
 async function postSlack(
   record: InstructorRecord,
   employeeId: string | null,
   contactId: string | null,
   config: WorkflowConfig,
   deps: RunDeps,
+  match: XeroMatchResult,
 ): Promise<SlackStepResult> {
+  if (match.disposition === "hold-name") {
+    const held = buildXeroHoldMessage({
+      recordId: record.recordId,
+      firstName: record.firstName,
+      lastName: record.lastName,
+      employeeIds: match.employeeIds,
+      contactIds: match.contactIds,
+      channel: config.slackChannelId,
+    });
+    if (deps.mode === "shadow") {
+      return { channel: held.channel, text: maskText(held.text, payrollReplacements(record)), sent: false };
+    }
+    await deps.ports.slack.postMessage(held);
+    return { ...held, sent: true };
+  }
+  if (match.disposition === "skip-email") {
+    return { channel: config.slackChannelId, text: "", sent: false };
+  }
   const message = buildSlackMessage({
     record,
     employeeId: employeeId ?? "{EmployeeID}",
@@ -343,7 +469,13 @@ async function postSlack(
   return { ...message, sent: true };
 }
 
-async function sendEmail(record: InstructorRecord, config: WorkflowConfig, deps: RunDeps): Promise<EmailStepResult> {
+async function sendEmail(
+  record: InstructorRecord,
+  config: WorkflowConfig,
+  deps: RunDeps,
+  match: XeroMatchResult,
+): Promise<EmailStepResult> {
+  if (blocked(match)) return emptyEmail(record, config);
   const message = buildInstructorEmail(record, config);
   if (deps.mode === "shadow") {
     return {

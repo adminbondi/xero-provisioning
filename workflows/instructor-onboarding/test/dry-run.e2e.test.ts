@@ -59,6 +59,10 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.deepEqual(
     fake.calls.map((call) => `${call.port}.${call.method}`),
     [
+      "employees.findEmployeesByEmail",
+      "contacts.findContactsByEmail",
+      "employees.findEmployeesByName",
+      "contacts.findContactsByName",
       "employees.createEmployee",
       "employees.getEmployee",
       "employees.updatePayTemplate",

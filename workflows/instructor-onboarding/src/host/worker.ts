@@ -3,18 +3,22 @@
  *
  * scheduled: once an hour, list new Instructors rows and enqueue them. One cron.
  * queue: starts one Workflow instance. Live id is the Airtable record id. Dry-run id is that id plus `-dry`.
- * fetch: POST /intake still accepts a row. The Airtable automation is not used.
+ * fetch: POST /intake still accepts a row. POST /run processes one record id now.
+ * The Airtable automation is not used.
  *
  * Tests do not import this file. They call the functions it uses, with fakes.
  */
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
-import { AIRTABLE_POLL_CRON, resolveConfig } from "../config.ts";
+import { parseAirtableRecord } from "../airtable/parse-record.ts";
+import { AIRTABLE_BASE_ID, AIRTABLE_POLL_CRON, AIRTABLE_TABLE_ID, resolveConfig, slackChannelForRun } from "../config.ts";
 import { isTerminalWorkflowError } from "../errors.ts";
+import { payrollFieldPresence } from "../sensitive.ts";
 import { pollNewInstructors } from "./airtable-poll.ts";
 import { dryRunPorts } from "./dry-run-ports.ts";
-import { createAirtablePort, createLivePorts, missingLiveEnv, type LiveEnv } from "./http.ts";
+import { bindFetch, createAirtablePort, createLivePorts, fetchAirtableRecord, missingLiveEnv, type LiveEnv } from "./http.ts";
 import { dryRunEnabled, handleIntake, workflowInstanceId } from "./intake.ts";
+import { handleManualRun, summariseParsed } from "./manual-run.ts";
 import { startWorkflowForRecord } from "./queue-consumer.ts";
 import { runOnboardingSteps, type RunDeps, type StepDo } from "../run.ts";
 import type { AirtableApiRecord } from "../types.ts";
@@ -33,7 +37,10 @@ export interface Env extends LiveEnv {
   XERO_WEEKLY_PAYROLL_CALENDAR_ID: string;
   SAFETY_NET_NOT_BEFORE?: string;
   XERO_ORG_SHORTCODE?: string;
+  /** Live Slack channel. Required when DRY_RUN is false. */
   SLACK_CHANNEL_ID?: string;
+  /** Preview and dry-run Slack channel. Required when DRY_RUN is on. Never falls through to the live channel. */
+  SLACK_DRY_RUN_CHANNEL_ID?: string;
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
   EMAIL_CC?: string;
@@ -75,8 +82,10 @@ function envRecord(env: Env): Record<string, string | undefined> {
 }
 
 function workflowDeps(env: Env): RunDeps {
+  const dryRun = dryRunEnabled(env.DRY_RUN);
   const config = resolveConfig(envRecord(env));
-  if (dryRunEnabled(env.DRY_RUN)) {
+  config.slackChannelId = slackChannelForRun(env, dryRun);
+  if (dryRun) {
     return { ports: dryRunPorts(), mode: "shadow", config };
   }
   const missing = missingLiveEnv(envRecord(env));
@@ -84,7 +93,7 @@ function workflowDeps(env: Env): RunDeps {
     throw new Error(`Missing Worker secrets: ${missing.join(", ")}`);
   }
   return {
-    ports: createLivePorts(envRecord(env), fetch),
+    ports: createLivePorts(envRecord(env), bindFetch(fetch)),
     mode: "live",
     config,
   };
@@ -116,12 +125,53 @@ export class InstructorOnboardingWorkflow extends WorkflowEntrypoint<Env, Airtab
 
 async function onFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === "/run") return onManualRun(request, env);
   if (url.pathname !== "/intake") {
     return Response.json({ error: "Not found." }, { status: 404 });
   }
   return handleIntake(request, {
     ingressToken: env.INGRESS_TOKEN,
     enqueue: (record) => env.INTAKE_QUEUE.send(record),
+  });
+}
+
+async function onManualRun(request: Request, env: Env): Promise<Response> {
+  const dryRun = dryRunEnabled(env.DRY_RUN);
+  let slackChannelId: string;
+  try {
+    slackChannelId = slackChannelForRun(env, dryRun);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Slack channel is not configured.";
+    return Response.json({ error: message }, { status: 503 });
+  }
+  if (!env.AIRTABLE_TOKEN) {
+    return Response.json({ error: "AIRTABLE_TOKEN is not set." }, { status: 503 });
+  }
+  return handleManualRun(request, {
+    ingressToken: env.INGRESS_TOKEN,
+    dryRun,
+    slackChannelId,
+    loadRecord: (recordId) =>
+      fetchAirtableRecord({
+        fetch: bindFetch(fetch),
+        token: env.AIRTABLE_TOKEN,
+        baseId: env.AIRTABLE_BASE_ID || AIRTABLE_BASE_ID,
+        tableId: env.AIRTABLE_TABLE_ID || AIRTABLE_TABLE_ID,
+        recordId,
+      }),
+    startWorkflow: (record) =>
+      startWorkflowForRecord(
+        record,
+        (id, payload) => env.ONBOARDING_WORKFLOW.create({ id, params: payload }).then(() => undefined),
+        { dryRun },
+      ),
+    runShadow: dryRun
+      ? async (record) => {
+          const parsed = parseAirtableRecord(record);
+          const result = await runOnboardingSteps(record, workflowDeps(env));
+          return summariseParsed(result, payrollFieldPresence(parsed));
+        }
+      : undefined,
   });
 }
 
@@ -164,7 +214,7 @@ async function onScheduled(cron: string, env: Env): Promise<void> {
   }
   const dryRun = dryRunEnabled(env.DRY_RUN);
   const result = await pollNewInstructors({
-    airtable: createAirtablePort({ fetch, token: env.AIRTABLE_TOKEN }),
+    airtable: createAirtablePort({ fetch: bindFetch(fetch), token: env.AIRTABLE_TOKEN }),
     cursor: env.AIRTABLE_CURSOR,
     dryRun,
     notBefore: env.SAFETY_NET_NOT_BEFORE ?? null,

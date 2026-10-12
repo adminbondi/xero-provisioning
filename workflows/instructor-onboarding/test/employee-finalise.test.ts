@@ -83,8 +83,11 @@ test("the super line uses the form fund membership and a second run does not dup
   } as unknown as XeroPayTemplate;
 
   const second = await runInstructorOnboarding(sampleAirtableRecord(), deps);
+  assert.equal(second.employee.action, "skip-email");
   assert.equal(second.employee.created, false);
-  assert.equal(fake.calls.filter((call) => call.method === "updatePayTemplate").length, 2);
+  assert.equal(second.payTemplate.updated, false);
+  assert.equal(fake.calls.filter((call) => call.method === "updatePayTemplate").length, 1);
+  await fake.ports.employees.updatePayTemplate(stored.employeeId, first.payTemplate.template);
   assert.equal(stored.payTemplate?.SuperLines.length, 1);
   assert.deepEqual(stored.payTemplate?.EarningsLines, []);
   assert.deepEqual(stored.payTemplate?.LeaveLines, []);

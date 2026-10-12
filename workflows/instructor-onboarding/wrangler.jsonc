@@ -7,7 +7,9 @@
   },
   "vars": {
     "DRY_RUN": "true",
-    "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z"
+    "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z",
+    "SLACK_CHANNEL_ID": "C09BK6Y2WHL",
+    "SLACK_DRY_RUN_CHANNEL_ID": "C0C8CEZN64E"
   },
   "workflows": [
     {

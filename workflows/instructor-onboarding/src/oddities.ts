@@ -159,4 +159,9 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
     summary:
       "Emergency contact cannot be set through the Payroll AU or Accounting API. It is only on the Patty webhook payload.",
   },
+  {
+    id: "xero-email-skip-name-hold",
+    summary:
+      "Before creating an employee or contact, the run looks up Xero by email and then by name. An email match skips both creates and is logged. A name-only match is held, flagged in Slack, and not created. It is not silently skipped. Dry run does not call Xero.",
+  },
 ];

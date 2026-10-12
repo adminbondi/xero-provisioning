@@ -230,3 +230,14 @@ test("the Airtable adapter sends the created-time filter and still rejects a vie
     /CREATED_TIME/,
   );
 });
+
+test("the go-live cutoff is the env value passed in, and the production timestamp is not replaced", () => {
+  const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  assert.match(wrangler, /"SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z"/);
+  const previewCutoff = "2026-03-01T00:00:00.000Z";
+  assert.equal(createdAfterFormula(previewCutoff), "IS_AFTER(CREATED_TIME(), '2026-03-01T00:00:00.000Z')");
+  assert.equal(createdAfterFormula(previewCutoff).includes("2026-10-12T09:19:56Z"), false);
+  assert.match(wrangler, /"SLACK_CHANNEL_ID": "C09BK6Y2WHL"/);
+  assert.match(wrangler, /"SLACK_DRY_RUN_CHANNEL_ID": "C0C8CEZN64E"/);
+  assert.equal(wrangler.includes('"SLACK_DRY_RUN_CHANNEL_ID": "C09BK6Y2WHL"'), false);
+});

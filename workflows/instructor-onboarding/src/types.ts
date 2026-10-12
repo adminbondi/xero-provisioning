@@ -175,14 +175,20 @@ export interface WorkflowSuccess {
     timeZone: string;
     resolved: string;
   };
+  match: {
+    disposition: "create" | "skip-email" | "hold-name";
+    reason: "dry-run" | "no-match" | "email" | "name";
+    employeeIds: string[];
+    contactIds: string[];
+  };
   employee: {
-    action: "create" | "reuse";
+    action: "create" | "reuse" | "skip-email" | "hold-name";
     employeeId: string | null;
     created: boolean;
     payload: XeroEmployeePayload;
   };
   contact: {
-    action: "create" | "update";
+    action: "create" | "update" | "skip-email" | "hold-name";
     contactId: string | null;
     created: boolean;
     payload: XeroContactPayload;
