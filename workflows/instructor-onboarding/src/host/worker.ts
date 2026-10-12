@@ -2,7 +2,7 @@
  * Cloudflare Worker for instructor onboarding.
  *
  * fetch: Airtable automation posts the new row. The handler checks a bearer token and enqueues it.
- * queue: starts one Workflow instance. The instance id is the Airtable record id.
+ * queue: starts one Workflow instance. Live id is the Airtable record id. Dry-run id is that id plus `-dry`.
  * scheduled: daily safety net for rows that never reached the queue.
  *
  * Tests do not import this file. They call the functions it uses, with fakes.
@@ -12,7 +12,7 @@ import { NonRetryableError } from "cloudflare:workflows";
 import { resolveConfig, SAFETY_NET_CRON } from "../config.ts";
 import { isTerminalWorkflowError } from "../errors.ts";
 import { createLivePorts, missingLiveEnv, type LiveEnv } from "./http.ts";
-import { handleIntake } from "./intake.ts";
+import { dryRunEnabled, handleIntake, workflowInstanceId } from "./intake.ts";
 import { startWorkflowForRecord } from "./queue-consumer.ts";
 import { runSafetyNet } from "./safety-net.ts";
 import { runOnboardingSteps, type RunDeps, type StepDo } from "../run.ts";
@@ -25,6 +25,8 @@ export interface Env extends LiveEnv {
   ONBOARDING_WORKFLOW: WorkflowBinding<AirtableApiRecord>;
   INTAKE_QUEUE: QueueBinding<AirtableApiRecord>;
   INGRESS_TOKEN: string;
+  /** Default true. Only the string "false" allows Xero, Slack, and Gmail writes. */
+  DRY_RUN?: string;
   XERO_WEEKLY_PAYROLL_CALENDAR_ID: string;
   SAFETY_NET_NOT_BEFORE?: string;
   XERO_ORG_SHORTCODE?: string;
@@ -64,14 +66,14 @@ function envRecord(env: Env): Record<string, string | undefined> {
   };
 }
 
-function liveDeps(env: Env): RunDeps {
+function workflowDeps(env: Env): RunDeps {
   const missing = missingLiveEnv(envRecord(env));
   if (missing.length > 0) {
     throw new Error(`Missing Worker secrets: ${missing.join(", ")}`);
   }
   return {
     ports: createLivePorts(envRecord(env), fetch),
-    mode: "live",
+    mode: dryRunEnabled(env.DRY_RUN) ? "shadow" : "live",
     config: resolveConfig(envRecord(env)),
   };
 }
@@ -96,7 +98,7 @@ function bindStep(step: WorkflowStep): StepDo {
 
 export class InstructorOnboardingWorkflow extends WorkflowEntrypoint<Env, AirtableApiRecord> {
   async run(event: WorkflowEvent<AirtableApiRecord>, step: WorkflowStep): Promise<void> {
-    await runOnboardingSteps(event.payload, liveDeps(this.env), bindStep(step));
+    await runOnboardingSteps(event.payload, workflowDeps(this.env), bindStep(step));
   }
 }
 
@@ -114,10 +116,20 @@ async function onFetch(request: Request, env: Env): Promise<Response> {
 async function onQueue(batch: MessageBatch<AirtableApiRecord>, env: Env): Promise<void> {
   for (const message of batch.messages) {
     try {
-      const outcome = await startWorkflowForRecord(message.body, (id, record) =>
-        env.ONBOARDING_WORKFLOW.create({ id, params: record }).then(() => undefined),
+      const dryRun = dryRunEnabled(env.DRY_RUN);
+      const outcome = await startWorkflowForRecord(
+        message.body,
+        (id, record) => env.ONBOARDING_WORKFLOW.create({ id, params: record }).then(() => undefined),
+        { dryRun },
       );
-      console.log(JSON.stringify({ event: outcome === "duplicate" ? "workflow-duplicate" : "workflow-started", recordId: message.body.id }));
+      console.log(
+        JSON.stringify({
+          event: outcome === "duplicate" ? "workflow-duplicate" : "workflow-started",
+          recordId: message.body.id,
+          instanceId: workflowInstanceId(message.body.id, dryRun),
+          dryRun,
+        }),
+      );
       message.ack();
     } catch (error) {
       console.log(
@@ -145,8 +157,9 @@ async function onScheduled(env: Env): Promise<void> {
     baseId: env.AIRTABLE_BASE_ID,
     tableId: env.AIRTABLE_TABLE_ID,
     hasWorkflow: async (recordId) => {
+      const instanceId = workflowInstanceId(recordId, dryRunEnabled(env.DRY_RUN));
       try {
-        const instance = await env.ONBOARDING_WORKFLOW.get(recordId);
+        const instance = await env.ONBOARDING_WORKFLOW.get(instanceId);
         await instance.status();
         return true;
       } catch (error) {

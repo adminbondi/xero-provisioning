@@ -16,4 +16,6 @@ export const HOSTING_DECISION = {
   durableStore: "none",
   safetyNetCron: SAFETY_NET_CRON,
   xeroAuth: "oauth-refresh-token",
+  dryRunDefault: true,
+  dryRunInstanceSuffix: "-dry",
 } as const;

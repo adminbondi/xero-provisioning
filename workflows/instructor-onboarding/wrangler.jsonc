@@ -5,6 +5,9 @@
   "observability": {
     "enabled": true
   },
+  "vars": {
+    "DRY_RUN": "true"
+  },
   "workflows": [
     {
       "name": "instructor-onboarding",

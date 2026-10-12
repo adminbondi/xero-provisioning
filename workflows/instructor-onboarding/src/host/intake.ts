@@ -1,13 +1,29 @@
 import type { AirtableApiRecord } from "../types.ts";
 
-/** Workflow instance ids: 1–100 characters, letters, digits, dashes, underscores. */
+/** Workflow instance ids: 1–100 characters, letters, digits, dashes, underscores. A colon is not allowed. */
 const WORKFLOW_INSTANCE_ID = /^[A-Za-z0-9_-]{1,100}$/;
 
-export function workflowInstanceId(recordId: string): string {
+/** Distinct from the live id. Cloudflare rejects `:`, so this is the `-dry` equivalent of a `:dry` suffix. */
+export const DRY_RUN_INSTANCE_SUFFIX = "-dry";
+
+/**
+ * Dry run is the default. Only the exact string "false" turns writes on.
+ * Unset, empty, and "true" all stay in dry run so the first deploy cannot write by accident.
+ */
+export function dryRunEnabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() !== "false";
+}
+
+export function workflowInstanceId(recordId: string, dryRun = false): string {
   if (!WORKFLOW_INSTANCE_ID.test(recordId)) {
     throw new Error("Airtable record id cannot be used as a Workflow instance id.");
   }
-  return recordId;
+  if (!dryRun) return recordId;
+  const instanceId = `${recordId}${DRY_RUN_INSTANCE_SUFFIX}`;
+  if (!WORKFLOW_INSTANCE_ID.test(instanceId) || instanceId === recordId) {
+    throw new Error("Dry-run Workflow instance id must not be the bare Airtable record id.");
+  }
+  return instanceId;
 }
 
 export function isWorkflowAlreadyExists(error: unknown): boolean {

@@ -6,8 +6,9 @@ export type StartWorkflow = (instanceId: string, record: AirtableApiRecord) => P
 export async function startWorkflowForRecord(
   record: AirtableApiRecord,
   start: StartWorkflow,
+  options?: { dryRun?: boolean },
 ): Promise<"started" | "duplicate"> {
-  const instanceId = workflowInstanceId(record.id);
+  const instanceId = workflowInstanceId(record.id, options?.dryRun === true);
   try {
     await start(instanceId, record);
     return "started";

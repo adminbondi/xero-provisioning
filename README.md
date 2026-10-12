@@ -65,6 +65,24 @@ npm run dry-run
 
 D1 and KV are not used (`no-durable-store`).
 
+### DRY_RUN
+
+`DRY_RUN` defaults **on**. `wrangler.jsonc` sets the var to `"true"`. Only the exact string `"false"` allows Xero, Slack, and Gmail writes. Unset still means dry run.
+
+While it is on, the Workflow parses the real Airtable row from the queue message and runs the super-fund and gender lookups. It does not call Xero, Slack, or Gmail. Each step logs `dry-run-would-send` with the payload it would have sent, and the step result is that same payload.
+
+The dry-run Workflow instance id is `{Airtable record id}-dry`, not the bare record id. Cloudflare instance ids cannot contain `:`, so this is the usable form of a `:dry` suffix. A dry run does not consume the live id. The same record can be run live later, after `DRY_RUN` is set to `false`, because that live instance id is still free. A second dry run of the same record does not start another dry instance.
+
+Turning `DRY_RUN` off is a later explicit change. This pull request does not deploy.
+
+After merge, the first production check is still a dry run:
+
+1. Deploy with `DRY_RUN=true` (the committed default).
+2. Set `SAFETY_NET_NOT_BEFORE` to that deploy instant, in UTC, before the cron can list older rows.
+3. Post one Instructors row to `/intake` and read the seven `dry-run-would-send` logs.
+4. Confirm the instance id ends in `-dry` and that Xero, Slack, and Gmail received no writes.
+5. Leave `DRY_RUN` on until Thiago says to turn it off. He is turning Zap 364623444 off first. Do not run a live write before that later go.
+
 - Duplicate prevention is the Workflow instance id, which Cloudflare keeps after the run finishes. A second `create({ id: recordId })` does not start another run.
 - Step retries are stored by Workflows. A failed contact step does not create the employee again.
 - The safety-net cutoff is the env var `SAFETY_NET_NOT_BEFORE`, set once at switchover. It is not a moving cursor, so it does not need a database.

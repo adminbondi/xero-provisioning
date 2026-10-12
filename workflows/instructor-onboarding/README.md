@@ -57,6 +57,8 @@ npx wrangler secret put XERO_WEEKLY_PAYROLL_CALENDAR_ID
 npx wrangler secret put SAFETY_NET_NOT_BEFORE
 ```
 
+`DRY_RUN` is already `"true"` in `wrangler.jsonc`. Do not change it to `false` in this setup.
+
 `XERO_WEEKLY_PAYROLL_CALENDAR_ID` is the single WEEKLY payroll calendar id. The employee step posts once and does not list calendars. `SAFETY_NET_NOT_BEFORE` is an ISO timestamp. The daily check ignores rows created at or before it. The cron in `wrangler.jsonc` is `0 21 * * *` (21:00 UTC).
 
 Xero auth is an OAuth refresh token, not a Custom Connection. If Xero returns a new refresh token, the step fails instead of dropping it. There is no KV row to store the replacement.
@@ -81,6 +83,11 @@ In the Instructors table, add an automation: when a record is created, run `airt
 | `GMAIL_CLIENT_SECRET` | Google | OAuth client secret. |
 | `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. |
 | `SAFETY_NET_NOT_BEFORE` | Worker | Switchover timestamp. Unset means the daily check lists nothing. |
+| `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, and Gmail writes. |
+
+`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). That does not use the live id, so the same record can be replayed live after `DRY_RUN` is set to `false`. A second dry run of the same record does not start another instance.
+
+After merge: deploy with `DRY_RUN=true`, set `SAFETY_NET_NOT_BEFORE` to the deploy instant in UTC, post one row to `/intake`, and read the `dry-run-would-send` logs. Do not set `DRY_RUN` to `false` until a later go. Thiago is turning the Zap off first.
 
 Optional: `XERO_ORG_SHORTCODE`, `SLACK_CHANNEL_ID`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_CC`, `EMAIL_BCC`, `START_DATE_TIMEZONE`, `AIRTABLE_BASE_ID`, `AIRTABLE_TABLE_ID`, `CONFLUENCE_GUIDE_URL`. Defaults are the Zap's public values.
 

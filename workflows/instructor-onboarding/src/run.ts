@@ -113,24 +113,45 @@ export async function runOnboardingSteps(
     const parsed = parseAirtableRecord(raw);
     const missing = missingFieldLabels(parsed);
     if (missing.length > 0) throw new MissingFieldsError(missing);
+    logDryRun("airtable-record", parsed, deps);
     return parsed;
   });
 
-  const superFundId = await step.do("super-fund", STEP_CONFIG["super-fund"], async () => lookupSuperFund(record.superFund));
+  const superFundId = await step.do("super-fund", STEP_CONFIG["super-fund"], async () => {
+    const id = lookupSuperFund(record.superFund);
+    logDryRun("super-fund", { superFund: record.superFund, superFundId: id }, deps);
+    return id;
+  });
 
-  const genderCode = await step.do("gender", STEP_CONFIG.gender, async () => lookupGender(record.gender));
+  const genderCode = await step.do("gender", STEP_CONFIG.gender, async () => {
+    const code = lookupGender(record.gender);
+    logDryRun("gender", { gender: record.gender, genderCode: code }, deps);
+    return code;
+  });
 
-  const employee = await step.do("xero-employee", STEP_CONFIG["xero-employee"], async () =>
-    createEmployee(record, superFundId, genderCode, config, deps, now),
-  );
+  const employee = await step.do("xero-employee", STEP_CONFIG["xero-employee"], async () => {
+    const result = await createEmployee(record, superFundId, genderCode, config, deps, now);
+    logDryRun("xero-employee", result.payload, deps);
+    return result;
+  });
 
-  const contact = await step.do("xero-contact", STEP_CONFIG["xero-contact"], async () => upsertContact(record, deps));
+  const contact = await step.do("xero-contact", STEP_CONFIG["xero-contact"], async () => {
+    const result = await upsertContact(record, deps);
+    logDryRun("xero-contact", result.payload, deps);
+    return result;
+  });
 
-  const slack = await step.do("slack", STEP_CONFIG.slack, async () =>
-    postSlack(record, employee.employeeId, contact.contactId, config, deps),
-  );
+  const slack = await step.do("slack", STEP_CONFIG.slack, async () => {
+    const result = await postSlack(record, employee.employeeId, contact.contactId, config, deps);
+    logDryRun("slack", { channel: result.channel, text: result.text }, deps);
+    return result;
+  });
 
-  const email = await step.do("email", STEP_CONFIG.email, async () => sendEmail(record, config, deps));
+  const email = await step.do("email", STEP_CONFIG.email, async () => {
+    const result = await sendEmail(record, config, deps);
+    logDryRun("email", result.message, deps);
+    return result;
+  });
 
   return {
     ok: true,
@@ -230,6 +251,11 @@ async function sendEmail(record: InstructorRecord, config: WorkflowConfig, deps:
   if (deps.mode === "shadow") return { sent: false, message };
   await deps.ports.email.send(message);
   return { sent: true, message };
+}
+
+function logDryRun(step: string, wouldSend: unknown, deps: RunDeps): void {
+  if (deps.mode !== "shadow") return;
+  console.log(JSON.stringify({ event: "dry-run-would-send", step, wouldSend }));
 }
 
 function activeFlags(genderCode: string): string[] {

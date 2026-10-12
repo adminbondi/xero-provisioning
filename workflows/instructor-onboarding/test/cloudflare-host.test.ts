@@ -2,11 +2,19 @@ import "./block-network.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
+import { parseAirtableRecord } from "../src/airtable/parse-record.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
+import { bearerMatches, dryRunEnabled, handleIntake, workflowInstanceId } from "../src/host/intake.ts";
+import { startWorkflowForRecord } from "../src/host/queue-consumer.ts";
 import { STEP_CONFIG } from "../src/host/step-config.ts";
-import { bearerMatches, handleIntake } from "../src/host/intake.ts";
 import { runSafetyNet } from "../src/host/safety-net.ts";
-import { PIPELINE_STEPS } from "../src/run.ts";
+import { lookupGender } from "../src/lookups/gender.ts";
+import { lookupSuperFund } from "../src/lookups/super-funds.ts";
+import { buildContactPayload } from "../src/mappings/contact.ts";
+import { buildEmployeePayload } from "../src/mappings/employee.ts";
+import { buildInstructorEmail } from "../src/messages/email.ts";
+import { buildSlackMessage } from "../src/messages/slack.ts";
+import { PIPELINE_STEPS, runInstructorOnboarding } from "../src/run.ts";
 import { runtime } from "./helpers.ts";
 
 test("intake accepts a bearer token and enqueues the record", async () => {
@@ -107,4 +115,57 @@ test("each of the seven steps has its own retry settings", () => {
   const script = readFileSync(new URL("../airtable/on-record-created.js", import.meta.url), "utf8");
   assert.match(script, /Bearer \$\{ingressToken\}/);
   assert.match(script, /\/intake|workerUrl/);
+});
+
+test("DRY_RUN defaults on and uses a distinct instance id", async () => {
+  assert.equal(dryRunEnabled(undefined), true);
+  assert.equal(dryRunEnabled(""), true);
+  assert.equal(dryRunEnabled("true"), true);
+  assert.equal(dryRunEnabled("false"), false);
+  const record = sampleAirtableRecord();
+  assert.equal(workflowInstanceId(record.id, true), "recInstructor001-dry");
+  assert.notEqual(workflowInstanceId(record.id, true), record.id);
+  assert.equal(workflowInstanceId(record.id, false), record.id);
+  const started: string[] = [];
+  const start = async (id: string) => {
+    if (started.includes(id)) throw new Error("Workflow instance already exists");
+    started.push(id);
+  };
+  assert.equal(await startWorkflowForRecord(record, start, { dryRun: true }), "started");
+  assert.equal(await startWorkflowForRecord(record, start, { dryRun: false }), "started");
+  assert.deepEqual(started, ["recInstructor001-dry", "recInstructor001"]);
+});
+
+test("DRY_RUN returns the would-send payloads and does not write", async () => {
+  const { fake, deps } = runtime();
+  const raw = sampleAirtableRecord();
+  const result = await runInstructorOnboarding(raw, { ...deps, mode: "shadow" });
+  const record = parseAirtableRecord(raw);
+  const expectedEmployee = buildEmployeePayload({
+    record,
+    genderCode: lookupGender(record.gender),
+    superFundId: lookupSuperFund(record.superFund),
+    payrollCalendarId: "cal-weekly",
+    startDate: "2026-10-13",
+  });
+  assert.deepEqual(result.employee.payload, expectedEmployee);
+  assert.equal(result.employee.created, false);
+  assert.equal(result.employee.employeeId, null);
+  assert.deepEqual(result.contact.payload, buildContactPayload(record));
+  assert.equal(result.contact.created, false);
+  assert.deepEqual(
+    { channel: result.slack.channel, text: result.slack.text },
+    buildSlackMessage({ record, employeeId: "{EmployeeID}", contactId: "{ContactID}", config: deps.config! }),
+  );
+  assert.equal(result.slack.sent, false);
+  assert.deepEqual(result.email.message, buildInstructorEmail(record, deps.config!));
+  assert.equal(result.email.sent, false);
+  assert.equal(fake.calls.some((call) => call.method === "createEmployee"), false);
+  assert.equal(fake.calls.some((call) => call.method === "upsertContact"), false);
+  assert.equal(fake.calls.some((call) => call.method === "postMessage"), false);
+  assert.equal(fake.calls.some((call) => call.method === "send"), false);
+  assert.equal(fake.employees.length, 0);
+  assert.equal(fake.contacts.length, 0);
+  assert.equal(fake.slack.length, 0);
+  assert.equal(fake.emails.length, 0);
 });
