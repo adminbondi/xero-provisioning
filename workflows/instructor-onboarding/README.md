@@ -57,7 +57,7 @@ npx wrangler secret put SAFETY_NET_NOT_BEFORE
 npx wrangler kv namespace create AIRTABLE_CURSOR
 ```
 
-`DRY_RUN` is already `"true"` in `wrangler.jsonc`. Do not change it to `false` in this setup. Do not deploy from this pull request. The Workers Free plan already has 5 crons on other Workers, so attaching this hourly cron may need Pedro to free a slot first.
+`DRY_RUN` and `SAFETY_NET_NOT_BEFORE` are not in the top-level `wrangler.jsonc` vars. A plain `wrangler deploy` replaces every var with that file and would wipe the live values. Production deploys must use `npx wrangler deploy --keep-vars`. The `env.preview` block keeps dry-run defaults for a non-production env only. Do not deploy from this pull request.
 
 `XERO_WEEKLY_PAYROLL_CALENDAR_ID` is the single WEEKLY payroll calendar id. The employee step posts once and does not list calendars. `SAFETY_NET_NOT_BEFORE` is the initial created-time cursor. Until that timestamp or a KV watermark exists, the poll lists nothing. The only cron in `wrangler.jsonc` is `0 * * * *` (minute 0 of every hour, UTC).
 
@@ -65,7 +65,7 @@ npx wrangler kv namespace create AIRTABLE_CURSOR
 
 Each hourly run is one Airtable list call, filtered with `IS_AFTER(CREATED_TIME(), watermark)`, page size 100, no view, and no per-record read. A second page is requested only when Airtable returns an offset. Steady state does not page: **720 list calls in a 30-day month** (24 × 30) and **744 in a 31-day month** (24 × 31). Both sit under Airtable's about 1,000 calls a month.
 
-Xero auth is an OAuth refresh token, not a Custom Connection. If Xero returns a new refresh token, the step fails instead of dropping it. That token is not written to KV. KV holds only the created-time watermark.
+Xero auth is an OAuth refresh token, not a Custom Connection. It follows payroll `xero_api/token_store.py` (`shared_oauth_access_token` and `RenderRefreshTokenStore.persist_refresh_token`). The Worker store is the existing `AIRTABLE_CURSOR` KV key `xero-refresh-token`. That key is read before the `XERO_REFRESH_TOKEN` secret. A rotated token is saved and read back before any Xero call. The same isolate shares one refresh, and one `invalid_grant` re-reads the store a single time. The token value is not logged. KV also holds the created-time watermark.
 
 ## Airtable
 
@@ -79,7 +79,7 @@ Airtable's free plan cannot run scripts, so the record-created automation is not
 | `AIRTABLE_TOKEN` | Airtable | Worker secret. Hourly read of Instructors in base `appePgXVPIIkgnvBQ`. Never commit it. |
 | `XERO_CLIENT_ID` | Xero | OAuth client. |
 | `XERO_CLIENT_SECRET` | Xero | OAuth client secret. |
-| `XERO_REFRESH_TOKEN` | Xero | Refresh token. A rotated token is refused, not stored. |
+| `XERO_REFRESH_TOKEN` | Xero | Refresh token secret. Used only when KV has no stored token. A rotated token is written to KV and read back. |
 | `XERO_TENANT_ID` | Xero | Balance Moves tenant. |
 | `XERO_WEEKLY_PAYROLL_CALENDAR_ID` | Xero | Weekly payroll calendar. Keeps the employee step to one POST. |
 | `SLACK_BOT_TOKEN` | Slack | Post to `#management` as the bot. |
@@ -93,7 +93,7 @@ Airtable's free plan cannot run scripts, so the record-created automation is not
 
 `DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run Slack and email previews are masked the same way. A live #management Slack post is still the Zap text. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). The dry-run poll uses its own KV watermark, so it does not consume the live cursor or the live instance id. A second dry run of the same record does not start another instance.
 
-Do not deploy this pull request. When a deploy does happen, keep `DRY_RUN=true`, set `SAFETY_NET_NOT_BEFORE` to that instant in UTC, and let the hourly poll list rows created after it. Do not set `DRY_RUN` to `false` until a later go. Thiago is turning the Zap off first. Deploy may need Pedro to free a cron slot on the Workers Free plan.
+Do not deploy this pull request. When a production deploy does happen, use `npx wrangler deploy --keep-vars` so live `DRY_RUN` and `SAFETY_NET_NOT_BEFORE` stay as they are. Do not put those two keys back in the top-level vars.
 
 Optional: `XERO_ORG_SHORTCODE`, `SLACK_CHANNEL_ID`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_CC`, `EMAIL_BCC`, `START_DATE_TIMEZONE`, `AIRTABLE_BASE_ID`, `AIRTABLE_TABLE_ID`, `CONFLUENCE_GUIDE_URL`. Defaults are the Zap's public values.
 

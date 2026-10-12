@@ -58,15 +58,15 @@ npm run dry-run
 **Host: one Cloudflare Worker**, with a Queue and a Workflow. This workflow is Airtable → Xero Payroll AU → Xero contacts → Slack → email. Those are HTTPS calls. It does not touch Mindbody.
 
 1. Once an hour (`0 * * * *`, UTC) the Worker lists Instructors rows created after its watermark and sends each new row to the queue `instructor-onboarding-intake`. Airtable's free plan cannot run scripts, so there is no record-created automation.
-2. The queue consumer starts one Workflow instance. The instance id is the Airtable record id. A second delivery does not start a second run (`workflow-instance-id`). The consumer acks that duplicate. Other start failures retry, then land on `instructor-onboarding-intake-dlq` (`max_retries` 5).
+2. The queue consumer starts one Workflow instance. The instance id is the Airtable record id. A second delivery does not start a second run (`workflow-instance-id`) when that instance is still running or already finished. An errored or terminated instance starts `{record id}-retry-1` instead. The consumer acks a duplicate. Other start failures retry, then land on `instructor-onboarding-intake-dlq` (`max_retries` 5).
 3. The Workflow runs the seven Zap steps, then an employee read, a pay-template finalise, and a Patty webhook.
 4. `POST /intake` still accepts a manual row. It is not the trigger.
 
-KV stores only that created-time watermark (`no-durable-store`). D1 is not used. The watermark is not the Xero duplicate lock.
+KV stores that created-time watermark and the Xero refresh token (`xero-refresh-token`). D1 is not used. Neither value is the Xero duplicate lock.
 
 ### DRY_RUN
 
-`DRY_RUN` defaults **on**. `wrangler.jsonc` sets the var to `"true"`. Only the exact string `"false"` allows Xero, Slack, and Gmail writes. Unset still means dry run.
+`DRY_RUN` defaults **on** when the var is unset. Only the exact string `"false"` allows Xero, Slack, and Gmail writes. The top-level `wrangler.jsonc` does not set `DRY_RUN` or `SAFETY_NET_NOT_BEFORE`. Those live values stay put only when production deploy uses `npx wrangler deploy --keep-vars`. A plain deploy would replace every var with the file and wipe them. The old dry-run defaults are under `env.preview` only.
 
 While it is on, the Workflow parses the real Airtable row from the queue message and runs the super-fund and gender lookups. It does not call Xero, Slack, or Gmail. Each step logs `dry-run-would-send`. The log omits the TFN, bank account number, BSB, ABN, and super fund member number, and records whether each of those fields is present. Slack and email previews in that log are masked. A live post to #management is still the Zap checklist, with those values included.
 
@@ -74,19 +74,19 @@ The dry-run Workflow instance id is `{Airtable record id}-dry`, not the bare rec
 
 Turning `DRY_RUN` off is a later explicit change. This pull request does not deploy.
 
-After merge, the first production check is still a dry run:
+After merge, do not change the live `DRY_RUN` or `SAFETY_NET_NOT_BEFORE` values:
 
-1. Deploy with `DRY_RUN=true` (the committed default). The Workers Free plan already has 5 crons on other Workers, so Pedro may need to free a slot before this hourly cron can attach.
-2. Set `SAFETY_NET_NOT_BEFORE` to that deploy instant, in UTC. That is the initial cursor. The poll lists nothing until it is set.
+1. Deploy production with `npx wrangler deploy --keep-vars`. Do not rely on the top-level file to set `DRY_RUN` or `SAFETY_NET_NOT_BEFORE`.
+2. Leave the live `SAFETY_NET_NOT_BEFORE` value in place. The poll uses that env value as the initial cursor when KV has no watermark.
 3. Set `AIRTABLE_TOKEN` as a Worker secret. Let the hourly poll list one new Instructors row and read the `dry-run-would-send` logs.
 4. Confirm the instance id ends in `-dry` and that Xero, Slack, and Gmail received no writes.
-5. Leave `DRY_RUN` on until Thiago says to turn it off. He is turning Zap 364623444 off first. Do not run a live write before that later go.
+5. Do not turn live `DRY_RUN` on or off from this branch. That still needs a separate go.
 
-- Duplicate prevention for Xero is the Workflow instance id, which Cloudflare keeps after the run finishes. A second `create({ id: recordId })` does not start another run.
+- Duplicate prevention for Xero is the Workflow instance id, which Cloudflare keeps after the run finishes. A second `create({ id: recordId })` does not start another run while that instance is running or complete. A failed instance can start `{recordId}-retry-1`. The new run still skips an employee that already exists by email or name.
 - The hourly poll's duplicate prevention is a KV created-time watermark, separate for dry run and live. A dry-run poll does not consume the live cursor.
 - Step retries are stored by Workflows. A failed contact step does not create the employee again.
 
-Xero auth is an OAuth refresh token, not a Custom Connection. If Xero returns a new refresh token, the adapter throws. That token is not written to KV.
+Xero auth is an OAuth refresh token, not a Custom Connection. A rotated token is stored in KV and read back before the next grant, following payroll `xero_api/token_store.py` (`shared_oauth_access_token` and `RenderRefreshTokenStore.persist_refresh_token`). The secret is used only when KV is empty. The token value is not logged.
 
 ### Airtable poll
 
@@ -221,7 +221,7 @@ No secrets in the repo. Live adapters throw if a required variable is missing. T
 | `AIRTABLE_TOKEN` | Airtable | Worker secret. Hourly list of Instructors (`data.records:read` on base `appePgXVPIIkgnvBQ`). Never committed. Tests do not use a real token. |
 | `XERO_CLIENT_ID` | Xero | OAuth client for the Balance Moves org. |
 | `XERO_CLIENT_SECRET` | Xero | OAuth client secret. |
-| `XERO_REFRESH_TOKEN` | Xero | Refresh token. A rotated token throws. It is not written to KV. |
+| `XERO_REFRESH_TOKEN` | Xero | Refresh token secret. Used only when KV has no stored token. A rotated token is written to KV and read back. |
 | `XERO_TENANT_ID` | Xero | Balance Moves tenant id. Sent as `Xero-Tenant-Id`. |
 | `XERO_WEEKLY_PAYROLL_CALENDAR_ID` | Xero | Weekly calendar id. The employee step does not look it up. |
 | `SLACK_BOT_TOKEN` | Slack | Bot token that can `chat.postMessage` to `#management`. |

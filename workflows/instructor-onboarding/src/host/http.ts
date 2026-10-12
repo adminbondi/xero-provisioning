@@ -2,6 +2,7 @@ import { emailsMatch, namesMatch } from "../match.ts";
 import { signWebhookBody } from "./webhook-sign.ts";
 import { isCreatedTimeFilter } from "./airtable-poll.ts";
 import { redactSensitiveError } from "../sensitive.ts";
+import { createOauthSession, sharedOauthAccessToken, type OauthSession, type RefreshTokenStore } from "./xero-refresh.ts";
 import type {
   AirtableListArgs,
   AirtablePort,
@@ -67,6 +68,10 @@ export interface SlackOnceStore {
 export interface LivePortHooks {
   onXeroRefreshToken?: (refreshToken: string) => Promise<void>;
   onGmailRefreshToken?: (refreshToken: string) => Promise<void>;
+  /** Payroll-style store. Read before the secret. Persist a rotated refresh token and read it back. */
+  xeroRefresh?: RefreshTokenStore;
+  /** Shared by concurrent calls in one isolate. Tests pass their own. */
+  oauthSession?: OauthSession;
   /** Cross-request claim so a replayed preview does not post the same Slack text twice. */
   slackOnce?: SlackOnceStore;
 }
@@ -531,6 +536,21 @@ export function createGmailPort(options: { fetch: typeof fetch; getAccessToken: 
   };
 }
 
+function throwingRefreshStore(onRotate?: (refreshToken: string) => Promise<void>): RefreshTokenStore {
+  return {
+    async readRefreshToken() {
+      return "";
+    },
+    async persistRefreshToken(refreshToken: string) {
+      if (!onRotate) {
+        throw new Error("Xero returned a new refresh token but no onXeroRefreshToken handler is configured.");
+      }
+      await onRotate(refreshToken);
+      return refreshToken;
+    },
+  };
+}
+
 export function createLivePorts(
   env: Readonly<Record<string, string | undefined>>,
   fetchImpl: typeof fetch,
@@ -544,21 +564,16 @@ export function createLivePorts(
   const live = env as LiveEnv;
   const xeroRefresh = live.XERO_REFRESH_TOKEN;
   const gmailRefresh = live.GMAIL_REFRESH_TOKEN;
-  const getXeroToken = cacheToken(async () => {
-    const token = await refreshOAuthToken(boundFetch, XERO_TOKEN_URL, {
-      grant_type: "refresh_token",
-      refresh_token: xeroRefresh,
-      client_id: live.XERO_CLIENT_ID,
-      client_secret: live.XERO_CLIENT_SECRET,
+  const getXeroToken = () =>
+    sharedOauthAccessToken({
+      fetch: boundFetch,
+      tokenUrl: XERO_TOKEN_URL,
+      clientId: live.XERO_CLIENT_ID,
+      clientSecret: live.XERO_CLIENT_SECRET,
+      secretFallback: xeroRefresh,
+      store: hooks.xeroRefresh ?? throwingRefreshStore(hooks.onXeroRefreshToken),
+      session: hooks.oauthSession ?? createOauthSession(),
     });
-    if (token.refreshToken && token.refreshToken !== xeroRefresh) {
-      if (!hooks.onXeroRefreshToken) {
-        throw new Error("Xero returned a new refresh token but no onXeroRefreshToken handler is configured.");
-      }
-      await hooks.onXeroRefreshToken(token.refreshToken);
-    }
-    return token.accessToken;
-  });
   const getGmailToken = cacheToken(async () => {
     const token = await refreshOAuthToken(boundFetch, GMAIL_TOKEN_URL, {
       grant_type: "refresh_token",

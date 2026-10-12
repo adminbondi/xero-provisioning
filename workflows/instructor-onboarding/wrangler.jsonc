@@ -5,11 +5,22 @@
   "observability": {
     "enabled": true
   },
+  // Live DRY_RUN and SAFETY_NET_NOT_BEFORE are not in this block.
+  // `wrangler deploy` replaces every var with this file unless it is `wrangler deploy --keep-vars`.
+  // Production deploys must pass --keep-vars. Preview defaults live under env.preview only.
   "vars": {
-    "DRY_RUN": "true",
-    "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z",
     "SLACK_CHANNEL_ID": "C09BK6Y2WHL",
     "SLACK_DRY_RUN_CHANNEL_ID": "C0C8CEZN64E"
+  },
+  "env": {
+    "preview": {
+      "vars": {
+        "DRY_RUN": "true",
+        "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z",
+        "SLACK_CHANNEL_ID": "C09BK6Y2WHL",
+        "SLACK_DRY_RUN_CHANNEL_ID": "C0C8CEZN64E"
+      }
+    }
   },
   "workflows": [
     {

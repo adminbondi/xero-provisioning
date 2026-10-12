@@ -101,7 +101,7 @@ test("a second queue delivery with the same record id does not start a second wo
     if (started.includes(id)) throw new Error("Workflow instance already exists");
     started.push(id);
   };
-  assert.equal(await startWorkflowForRecord(record, start), "started");
-  assert.equal(await startWorkflowForRecord(record, start), "duplicate");
+  assert.equal((await startWorkflowForRecord(record, start)).result, "started");
+  assert.equal((await startWorkflowForRecord(record, start)).result, "duplicate");
   assert.deepEqual(started, ["recInstructor001"]);
 });
