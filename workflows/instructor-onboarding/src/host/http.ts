@@ -1,4 +1,5 @@
 import { emailsMatch } from "../match.ts";
+import { redactSensitiveError } from "../sensitive.ts";
 import type {
   AirtableListArgs,
   AirtablePort,
@@ -58,14 +59,6 @@ function asArray(value: unknown, key: string): Record<string, unknown>[] {
   return items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
 }
 
-function redact(text: string): string {
-  return text
-    .replace(/"access_token"\s*:\s*"[^"]*"/g, '"access_token":"[redacted]"')
-    .replace(/"refresh_token"\s*:\s*"[^"]*"/g, '"refresh_token":"[redacted]"')
-    .replace(/"TaxFileNumber"\s*:\s*"[^"]*"/g, '"TaxFileNumber":"[redacted]"')
-    .slice(0, 300);
-}
-
 async function readBody(response: Response): Promise<string> {
   try {
     return await response.text();
@@ -77,7 +70,7 @@ async function readBody(response: Response): Promise<string> {
 async function parseJson(response: Response): Promise<unknown> {
   const text = await readBody(response);
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} from ${response.url}: ${redact(text)}`);
+    throw new Error(`HTTP ${response.status} from ${response.url}: ${redactSensitiveError(text)}`);
   }
   if (!text) return {};
   try {

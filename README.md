@@ -69,7 +69,7 @@ D1 and KV are not used (`no-durable-store`).
 
 `DRY_RUN` defaults **on**. `wrangler.jsonc` sets the var to `"true"`. Only the exact string `"false"` allows Xero, Slack, and Gmail writes. Unset still means dry run.
 
-While it is on, the Workflow parses the real Airtable row from the queue message and runs the super-fund and gender lookups. It does not call Xero, Slack, or Gmail. Each step logs `dry-run-would-send` with the payload it would have sent, and the step result is that same payload.
+While it is on, the Workflow parses the real Airtable row from the queue message and runs the super-fund and gender lookups. It does not call Xero, Slack, or Gmail. Each step logs `dry-run-would-send`. The log omits the TFN, bank account number, BSB, ABN, and super fund member number, and records whether each of those fields is present. Slack and email previews in that log are masked. A live post to #management is still the Zap checklist, with those values included.
 
 The dry-run Workflow instance id is `{Airtable record id}-dry`, not the bare record id. Cloudflare instance ids cannot contain `:`, so this is the usable form of a `:dry` suffix. A dry run does not consume the live id. The same record can be run live later, after `DRY_RUN` is set to `false`, because that live instance id is still free. A second dry run of the same record does not start another dry instance.
 

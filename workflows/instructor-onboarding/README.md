@@ -85,7 +85,7 @@ In the Instructors table, add an automation: when a record is created, run `airt
 | `SAFETY_NET_NOT_BEFORE` | Worker | Switchover timestamp. Unset means the daily check lists nothing. |
 | `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, and Gmail writes. |
 
-`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). That does not use the live id, so the same record can be replayed live after `DRY_RUN` is set to `false`. A second dry run of the same record does not start another instance.
+`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run Slack and email previews are masked the same way. A live #management Slack post is still the Zap text. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). That does not use the live id, so the same record can be replayed live after `DRY_RUN` is set to `false`. A second dry run of the same record does not start another instance.
 
 After merge: deploy with `DRY_RUN=true`, set `SAFETY_NET_NOT_BEFORE` to the deploy instant in UTC, post one row to `/intake`, and read the `dry-run-would-send` logs. Do not set `DRY_RUN` to `false` until a later go. Thiago is turning the Zap off first.
 

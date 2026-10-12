@@ -20,7 +20,7 @@ const SAMPLE: AirtableApiRecord = {
     "Postal Code": "2026",
     ABN: "12345678901",
     BSB: "062000",
-    Account: "12345678",
+    Account: "90817263",
     "Bank Account Number": "55556666",
     Certificate: [{ id: "att1", url: "https://example.invalid/cert.pdf", filename: "cert.pdf" }],
   },

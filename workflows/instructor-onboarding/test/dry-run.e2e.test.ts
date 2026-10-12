@@ -34,7 +34,7 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(result.employee.payload.BankAccounts.length, 0);
   assert.equal(result.contact.created, true);
   assert.equal(result.contact.payload.Addresses[0]?.Region, "VIC");
-  assert.equal(result.contact.payload.BankAccountDetails, "06200012345678");
+  assert.equal(result.contact.payload.BankAccountDetails, "06200090817263");
   assert.equal(result.contact.payload.Phones[0]?.PhoneNumber, "+610412345678");
   assert.equal(result.slack.sent, true);
   assert.equal(result.slack.channel, "C09BK6Y2WHL");

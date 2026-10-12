@@ -14,7 +14,7 @@ test("step 5 builds the create/update contact, including concatenated bank detai
   assert.equal(proposedE164Mobile("0412345678"), "+61412345678");
   assert.equal(proposedE164Mobile("+61412345678"), null);
   assert.equal(payloadWouldChange(), false);
-  assert.equal(contactBankAccount("062000", "12345678"), "06200012345678");
+  assert.equal(contactBankAccount("062000", "90817263"), "06200090817263");
   assert.equal(contactNumberFor(record.recordId), "airtable:recInstructor001");
   const payload = buildContactPayload(record);
   assert.equal(payload.Name, "Avery Nguyen");
@@ -22,7 +22,7 @@ test("step 5 builds the create/update contact, including concatenated bank detai
   assert.equal(payload.LastName, "Nguyen");
   assert.equal(payload.EmailAddress, record.email);
   assert.equal(payload.TaxNumber, "12345678901");
-  assert.equal(payload.BankAccountDetails, "06200012345678");
+  assert.equal(payload.BankAccountDetails, "06200090817263");
   assert.equal(payload.Phones[0]?.PhoneType, "MOBILE");
   assert.equal(payload.Phones[0]?.PhoneNumber, "+610412345678");
   assert.equal(payload.Phones[0]?.PhoneCountryCode, "");

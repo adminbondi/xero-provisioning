@@ -31,7 +31,7 @@ test("step 6 posts to #management as the bot text from the Zap map", () => {
       "Name: Avery Nguyen",
       "Email: avery.nguyen.example@example.com",
       "Mobile: 0412345678",
-      "Bank: 12345678",
+      "Bank: 90817263",
       "BSB: 062000",
       "ABN: 12345678901 (https://abr.business.gov.au/ABN/View?id=12345678901)",
       "TFN: 123456782",

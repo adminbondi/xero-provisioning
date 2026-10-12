@@ -153,12 +153,16 @@ test("DRY_RUN returns the would-send payloads and does not write", async () => {
   assert.equal(result.employee.employeeId, null);
   assert.deepEqual(result.contact.payload, buildContactPayload(record));
   assert.equal(result.contact.created, false);
-  assert.deepEqual(
-    { channel: result.slack.channel, text: result.slack.text },
-    buildSlackMessage({ record, employeeId: "{EmployeeID}", contactId: "{ContactID}", config: deps.config! }),
-  );
+  const liveSlack = buildSlackMessage({ record, employeeId: "{EmployeeID}", contactId: "{ContactID}", config: deps.config! });
+  assert.equal(result.slack.channel, liveSlack.channel);
+  assert.notEqual(result.slack.text, liveSlack.text);
+  assert.equal(result.slack.text.includes(record.tfn), false);
   assert.equal(result.slack.sent, false);
-  assert.deepEqual(result.email.message, buildInstructorEmail(record, deps.config!));
+  const liveEmail = buildInstructorEmail(record, deps.config!);
+  assert.equal(result.email.message.from, liveEmail.from);
+  assert.equal(result.email.message.to, liveEmail.to);
+  assert.equal(result.email.message.subject, liveEmail.subject);
+  assert.equal(result.email.message.html.includes(record.abn), false);
   assert.equal(result.email.sent, false);
   assert.equal(fake.calls.some((call) => call.method === "createEmployee"), false);
   assert.equal(fake.calls.some((call) => call.method === "upsertContact"), false);
