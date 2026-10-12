@@ -86,7 +86,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "message-text-reconstructed-from-summary",
     summary:
-      "Slack and email copy is reconstructed from the map's summary, not a verbatim export of the Zap's mrkdwn or HTML.",
+      "Slack copy is still reconstructed from the map summary. The instructor email body is Thiago's verbatim step 7 HTML. The admin@ Gmail signature HTML was not in that export and is not invented.",
   },
   {
     id: "country-literal-australia",
@@ -131,7 +131,7 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "reject-numeric-airtable-fields",
     summary:
-      "Numeric Airtable values are rejected. Stringifying them would drop leading zeros on BSB, TFN, or account numbers.",
+      "Text columns such as BSB still reject numbers so a leading zero is not dropped. TFN, ABN, Superannuation Member Number, and Bank Account Number are number columns in the live table, so those four are read as their integer text.",
   },
   {
     id: "notifications-not-resent",

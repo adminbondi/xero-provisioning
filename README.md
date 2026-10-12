@@ -146,7 +146,7 @@ It lists the Instructors table with attachments, no view, and no filter (`no-vie
 
 **Do not switch this on, and do not turn Zap 364623444 off, without Thiago's explicit go.** This repository does not perform switchover.
 
-1. Compare Slack and email copy with the live Zap. The map summarised them (`message-text-reconstructed-from-summary`).
+1. Compare Slack copy with the live Zap. The instructor email body is the verbatim step 7 HTML (`message-text-reconstructed-from-summary`). The Gmail signature HTML was not in that export.
 2. Decide the oddities below that are still product calls. The `+61` mobile prefix is one of them. Behavior is unchanged.
 3. Put secrets in Wrangler. Do not commit them. Copy the weekly payroll calendar id into `XERO_WEEKLY_PAYROLL_CALENDAR_ID`.
 4. Set `SAFETY_NET_NOT_BEFORE` to the switchover instant. Leave it unset until then so the cron cannot scan history.
@@ -176,7 +176,7 @@ These match the Zap map. The code does not "correct" them.
 | `airtable-field-names-unconfirmed` | Column names are the map's labels, not confirmed field ids. |
 | `airtable-inbox-query-sh4iX` | Inbox link query key is `sh4iX`, as written. Confirm the live URL. |
 | `similar-super-fund-names-different-uuids` | Cbus and Media Super Accumulation keep different UUIDs. |
-| `message-text-reconstructed-from-summary` | Slack and email wording is reconstructed from the summary, not a verbatim Zap export. |
+| `message-text-reconstructed-from-summary` | Slack wording is still reconstructed from the summary. The instructor email body is the verbatim step 7 HTML. The Gmail signature HTML was not in that export. |
 | `country-literal-australia` | Country is the literal `Australia`. |
 | `employee-not-updated-on-rerun` | The employee step is Create. It does not patch an employee. Contacts are updated by `ContactNumber`. |
 | `slack-bank-line-is-account-number` | The checklist's bank line is the account number. The map has no bank name. |
@@ -193,7 +193,7 @@ Safety around the Zap, not silent mapping fixes.
 | `workflow-instance-id` | One Workflow instance per Airtable record. A second delivery does not start a second run. |
 | `safety-net-not-before` | The daily check lists nothing until `SAFETY_NET_NOT_BEFORE` is set. |
 | `no-durable-store` | No D1 or KV. Workflows stores step results. The cutoff is an env var. |
-| `reject-numeric-airtable-fields` | Numbers are rejected so a numeric BSB cannot lose its leading zero. |
+| `reject-numeric-airtable-fields` | Text columns such as BSB still reject numbers. TFN, ABN, member number, and Bank Account Number are live number columns and are read as integer text. |
 | `notifications-not-resent` | A finished Slack or email step is not run again, and a duplicate queue message does not start another instance. |
 
 ### Open decisions
