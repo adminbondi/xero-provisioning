@@ -13,6 +13,7 @@ import { resolveConfig, SAFETY_NET_CRON } from "../config.ts";
 import { isTerminalWorkflowError } from "../errors.ts";
 import { createLivePorts, missingLiveEnv, type LiveEnv } from "./http.ts";
 import { dryRunPorts } from "./dry-run-ports.ts";
+import { handleGoogleCallback, saveGmailRefreshToken, WORKER_SCRIPT_NAME } from "./google-oauth.ts";
 import { dryRunEnabled, handleIntake, workflowInstanceId } from "./intake.ts";
 import { startWorkflowForRecord } from "./queue-consumer.ts";
 import { runSafetyNet } from "./safety-net.ts";
@@ -40,6 +41,9 @@ export interface Env extends LiveEnv {
   AIRTABLE_BASE_ID?: string;
   AIRTABLE_TABLE_ID?: string;
   CONFLUENCE_GUIDE_URL?: string;
+  /** Used only by the Gmail callback to store GMAIL_REFRESH_TOKEN. Not required for dry run. */
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
 }
 
 function envRecord(env: Env): Record<string, string | undefined> {
@@ -109,6 +113,22 @@ export class InstructorOnboardingWorkflow extends WorkflowEntrypoint<Env, Airtab
 
 async function onFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === "/oauth/google/callback") {
+    return handleGoogleCallback(request, {
+      clientId: env.GMAIL_CLIENT_ID ?? "",
+      clientSecret: env.GMAIL_CLIENT_SECRET ?? "",
+      fetch,
+      canSave: Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),
+      saveRefreshToken: (refreshToken) =>
+        saveGmailRefreshToken({
+          fetch,
+          accountId: env.CLOUDFLARE_ACCOUNT_ID ?? "",
+          scriptName: WORKER_SCRIPT_NAME,
+          apiToken: env.CLOUDFLARE_API_TOKEN ?? "",
+          refreshToken,
+        }),
+    });
+  }
   if (url.pathname !== "/intake") {
     return Response.json({ error: "Not found." }, { status: 404 });
   }

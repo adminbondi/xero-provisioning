@@ -81,7 +81,9 @@ In the Instructors table, add an automation: when a record is created, run `airt
 | `SLACK_BOT_TOKEN` | Slack | Post to `#management` as the bot. |
 | `GMAIL_CLIENT_ID` | Google | Send as `admin@balancemoves.com.au`. |
 | `GMAIL_CLIENT_SECRET` | Google | OAuth client secret. |
-| `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. |
+| `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. `GET /oauth/google/callback` stores it after Google redirects. The response and logs do not include the code or the token. |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare | Lets that callback write the refresh token. Not required for dry run. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare | Same. Workers script write permission. Not required for dry run. |
 | `SAFETY_NET_NOT_BEFORE` | Worker | Switchover timestamp. Unset means the daily check lists nothing. |
 | `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, and Gmail writes. |
 
