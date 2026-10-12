@@ -12,6 +12,7 @@ import { NonRetryableError } from "cloudflare:workflows";
 import { resolveConfig, SAFETY_NET_CRON } from "../config.ts";
 import { isTerminalWorkflowError } from "../errors.ts";
 import { createLivePorts, missingLiveEnv, type LiveEnv } from "./http.ts";
+import { dryRunPorts } from "./dry-run-ports.ts";
 import { dryRunEnabled, handleIntake, workflowInstanceId } from "./intake.ts";
 import { startWorkflowForRecord } from "./queue-consumer.ts";
 import { runSafetyNet } from "./safety-net.ts";
@@ -67,14 +68,18 @@ function envRecord(env: Env): Record<string, string | undefined> {
 }
 
 function workflowDeps(env: Env): RunDeps {
+  const config = resolveConfig(envRecord(env));
+  if (dryRunEnabled(env.DRY_RUN)) {
+    return { ports: dryRunPorts(), mode: "shadow", config };
+  }
   const missing = missingLiveEnv(envRecord(env));
   if (missing.length > 0) {
     throw new Error(`Missing Worker secrets: ${missing.join(", ")}`);
   }
   return {
     ports: createLivePorts(envRecord(env), fetch),
-    mode: dryRunEnabled(env.DRY_RUN) ? "shadow" : "live",
-    config: resolveConfig(envRecord(env)),
+    mode: "live",
+    config,
   };
 }
 

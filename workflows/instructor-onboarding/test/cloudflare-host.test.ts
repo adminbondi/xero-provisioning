@@ -169,3 +169,12 @@ test("DRY_RUN returns the would-send payloads and does not write", async () => {
   assert.equal(fake.slack.length, 0);
   assert.equal(fake.emails.length, 0);
 });
+
+test("dry-run ports refuse every external call", async () => {
+  const { dryRunPorts } = await import("../src/host/dry-run-ports.ts");
+  const ports = dryRunPorts();
+  await assert.rejects(() => ports.employees.createEmployee({} as never, "key"), /DRY_RUN blocked employees.createEmployee/);
+  await assert.rejects(() => ports.contacts.upsertContact({} as never), /DRY_RUN blocked contacts.upsertContact/);
+  await assert.rejects(() => ports.slack.postMessage({ channel: "C", text: "x" }), /DRY_RUN blocked slack.postMessage/);
+  await assert.rejects(() => ports.email.send({} as never), /DRY_RUN blocked email.send/);
+});
