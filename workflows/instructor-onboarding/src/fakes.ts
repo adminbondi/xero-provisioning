@@ -4,14 +4,25 @@ import type {
   AirtablePort,
   ContactMatch,
   EmailPort,
+  EmployeeDetails,
   EmployeeMatch,
   PayrollCalendar,
   Ports,
   SlackPort,
+  SuperMembershipRef,
+  WebhookPort,
   XeroContactPort,
   XeroEmployeePort,
 } from "./ports.ts";
-import type { AirtableApiRecord, OutboundEmail, SlackMessage, XeroContactPayload, XeroEmployeePayload } from "./types.ts";
+import type {
+  AirtableApiRecord,
+  OutboundEmail,
+  PattyWebhookPayload,
+  SlackMessage,
+  XeroContactPayload,
+  XeroEmployeePayload,
+  XeroPayTemplate,
+} from "./types.ts";
 
 export interface FakeCall {
   port: string;
@@ -19,11 +30,22 @@ export interface FakeCall {
   detail?: unknown;
 }
 
+export interface ReadbackOverride {
+  gender?: string | null;
+  incomeType?: string | null;
+  superMemberships?: SuperMembershipRef[];
+}
+
 export interface FakeEmployee {
   employeeId: string;
   email: string;
   idempotencyKey: string | null;
   payload: XeroEmployeePayload | null;
+  gender: string | null;
+  incomeType: string | null;
+  superMemberships: SuperMembershipRef[];
+  /** Replaced wholesale by updatePayTemplate. A second call does not append lines. */
+  payTemplate: XeroPayTemplate | null;
 }
 
 export interface FakeContact {
@@ -42,6 +64,8 @@ export interface FakeOptions {
   failCreateEmployee?: number;
   failSlack?: number;
   failEmail?: number;
+  /** Applied to getEmployee so a test can simulate Xero dropping Gender or IncomeType. */
+  readback?: ReadbackOverride;
 }
 
 const DEFAULT_CALENDAR: PayrollCalendar = {
@@ -56,17 +80,28 @@ export interface FakeBundle {
   contacts: FakeContact[];
   slack: SlackMessage[];
   emails: OutboundEmail[];
+  webhooks: PattyWebhookPayload[];
   calls: FakeCall[];
   airtableRecords: AirtableApiRecord[];
 }
 
 export function createFakePorts(options: FakeOptions = {}): FakeBundle {
   const calls: FakeCall[] = [];
-  const employees: FakeEmployee[] = (options.employees ?? []).map((employee) => ({
+  const employees: FakeEmployee[] = (options.employees ?? []).map((employee, index) => ({
     employeeId: employee.employeeId,
     email: employee.email,
     idempotencyKey: null,
     payload: null,
+    gender: null,
+    incomeType: null,
+    superMemberships: [
+      {
+        superMembershipId: `membership-seed-${index + 1}`,
+        superFundId: "",
+        employeeNumber: "",
+      },
+    ],
+    payTemplate: null,
   }));
   const contacts: FakeContact[] = (options.contacts ?? []).map((contact) => ({
     contactId: contact.contactId,
@@ -76,6 +111,8 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
   }));
   const slack: SlackMessage[] = [];
   const emails: OutboundEmail[] = [];
+  const webhooks: PattyWebhookPayload[] = [];
+  const readback = options.readback;
   const airtableRecords = options.airtableRecords ?? [];
   const calendars = options.calendars ?? [DEFAULT_CALENDAR];
   let contactFailures = options.failUpsertContact ?? 0;
@@ -115,8 +152,43 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
         return { employeeId: existing.employeeId, created: false };
       }
       const employeeId = `employee-${employees.length + 1}`;
-      employees.push({ employeeId, email: payload.Email, idempotencyKey, payload: structuredClone(payload) });
+      const membership = payload.SuperMemberships[0];
+      employees.push({
+        employeeId,
+        email: payload.Email,
+        idempotencyKey,
+        payload: structuredClone(payload),
+        gender: payload.Gender,
+        incomeType: payload.IncomeType,
+        superMemberships: [
+          {
+            superMembershipId: `membership-${employees.length + 1}`,
+            superFundId: membership?.SuperFundID ?? "",
+            employeeNumber: membership?.EmployeeNumber ?? "",
+          },
+        ],
+        payTemplate: null,
+      });
       return { employeeId, created: true };
+    },
+    async getEmployee(employeeId: string): Promise<EmployeeDetails> {
+      calls.push({ port: "employees", method: "getEmployee", detail: { employeeId } });
+      const employee = employees.find((item) => item.employeeId === employeeId);
+      if (!employee) throw new Error(`Employee ${employeeId} was not found.`);
+      return {
+        employeeId,
+        gender: readback && "gender" in readback ? (readback.gender ?? null) : employee.gender,
+        incomeType: readback && "incomeType" in readback ? (readback.incomeType ?? null) : employee.incomeType,
+        superMemberships: readback?.superMemberships
+          ? structuredClone(readback.superMemberships)
+          : structuredClone(employee.superMemberships),
+      };
+    },
+    async updatePayTemplate(employeeId: string, template: XeroPayTemplate) {
+      calls.push({ port: "employees", method: "updatePayTemplate", detail: { employeeId, template } });
+      const employee = employees.find((item) => item.employeeId === employeeId);
+      if (!employee) throw new Error(`Employee ${employeeId} was not found.`);
+      employee.payTemplate = structuredClone(template);
     },
   };
 
@@ -183,6 +255,14 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
     },
   };
 
+  const webhookPort: WebhookPort = {
+    async post(payload: PattyWebhookPayload) {
+      calls.push({ port: "webhook", method: "post", detail: payload });
+      webhooks.push(structuredClone(payload));
+      return { delivered: true };
+    },
+  };
+
   const emailPort: EmailPort = {
     async send(message: OutboundEmail) {
       calls.push({ port: "email", method: "send", detail: { to: message.to, subject: message.subject } });
@@ -196,11 +276,19 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
   };
 
   return {
-    ports: { airtable, employees: employeePort, contacts: contactPort, slack: slackPort, email: emailPort },
+    ports: {
+      airtable,
+      employees: employeePort,
+      contacts: contactPort,
+      slack: slackPort,
+      email: emailPort,
+      webhook: webhookPort,
+    },
     employees,
     contacts,
     slack,
     emails,
+    webhooks,
     calls,
     airtableRecords,
   };

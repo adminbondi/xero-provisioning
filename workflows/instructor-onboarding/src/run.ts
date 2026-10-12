@@ -2,15 +2,16 @@ import { missingFieldLabels, parseAirtableRecord } from "./airtable/parse-record
 import { resolveStartDate } from "./clock.ts";
 import { ZAPIER_START_DATE_EXPRESSION, defaultConfig, type WorkflowConfig } from "./config.ts";
 import { MissingFieldsError, PayrollCalendarError } from "./errors.ts";
-import { STEP_CONFIG, type StepDo } from "./host/step-config.ts";
+import { PIPELINE_STEPS, STEP_CONFIG, type StepDo } from "./host/step-config.ts";
 import { lookupGender } from "./lookups/gender.ts";
 import { lookupSuperFund } from "./lookups/super-funds.ts";
 import { buildContactPayload } from "./mappings/contact.ts";
-import { buildEmployeePayload, employeeIdempotencyKey } from "./mappings/employee.ts";
+import { buildEmployeePayload, buildPayTemplate, employeeIdempotencyKey } from "./mappings/employee.ts";
+import { buildPattyWebhookPayload } from "./mappings/webhook.ts";
 import { buildInstructorEmail } from "./messages/email.ts";
 import { buildSlackMessage } from "./messages/slack.ts";
 import { ODDITIES } from "./oddities.ts";
-import type { Ports, XeroEmployeePort } from "./ports.ts";
+import type { EmployeeDetails, Ports, XeroEmployeePort } from "./ports.ts";
 import type {
   AirtableApiRecord,
   InstructorRecord,
@@ -60,6 +61,10 @@ interface EmailStepResult {
   sent: boolean;
   message: WorkflowSuccess["email"]["message"];
 }
+
+type EmployeeReadResult = WorkflowSuccess["employeeRead"];
+type PayTemplateResult = WorkflowSuccess["payTemplate"];
+type WebhookResult = WorkflowSuccess["webhook"];
 
 function configOf(deps: RunDeps): WorkflowConfig {
   return deps.config ?? defaultConfig();
@@ -135,6 +140,18 @@ export async function runOnboardingSteps(
     return result;
   });
 
+  const employeeRead = await step.do("xero-employee-read", STEP_CONFIG["xero-employee-read"], async () => {
+    const result = await readEmployee(employee.employeeId, superFundId, deps);
+    logDryRun("xero-employee-read", result, deps);
+    return result;
+  });
+
+  const payTemplate = await step.do("xero-employee-finalise", STEP_CONFIG["xero-employee-finalise"], async () => {
+    const result = await finalisePayTemplate(employee.employeeId, employeeRead.superMembershipId, deps);
+    logDryRun("xero-employee-finalise", result.template, deps);
+    return result;
+  });
+
   const contact = await step.do("xero-contact", STEP_CONFIG["xero-contact"], async () => {
     const result = await upsertContact(record, deps);
     logDryRun("xero-contact", result.payload, deps);
@@ -153,19 +170,17 @@ export async function runOnboardingSteps(
     return result;
   });
 
+  const webhook = await step.do("patty-webhook", STEP_CONFIG["patty-webhook"], async () => {
+    const result = await postPattyWebhook(record, employee.employeeId, contact.contactId, config.orgShortCode, deps);
+    logDryRun("patty-webhook", result.payload, deps);
+    return result;
+  });
+
   return {
     ok: true,
     mode: deps.mode,
     recordId: record.recordId,
-    steps: [
-      "airtable-record",
-      "super-fund",
-      "gender",
-      "xero-employee",
-      "xero-contact",
-      "slack",
-      "email",
-    ],
+    steps: [...PIPELINE_STEPS],
     superFundId,
     genderCode,
     startDate: {
@@ -182,6 +197,9 @@ export async function runOnboardingSteps(
     contact,
     slack,
     email,
+    employeeRead,
+    payTemplate,
+    webhook,
     flags: activeFlags(genderCode),
   };
 }
@@ -212,6 +230,82 @@ async function createEmployee(
     payload,
     startDate,
   };
+}
+
+function isUnset(value: string | null): boolean {
+  return value == null || value === "";
+}
+
+function membershipForFund(details: EmployeeDetails, superFundId: string): string {
+  const matches = details.superMemberships.filter(
+    (membership) => membership.superFundId === superFundId && membership.superMembershipId.length > 0,
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Employee GET returned ${matches.length} SuperMembershipID values for the form's super fund.`,
+    );
+  }
+  return matches[0]!.superMembershipId;
+}
+
+async function readEmployee(
+  employeeId: string | null,
+  superFundId: string,
+  deps: RunDeps,
+): Promise<EmployeeReadResult> {
+  if (deps.mode === "shadow") {
+    return {
+      checked: false,
+      employeeId: null,
+      superMembershipId: null,
+      gender: null,
+      incomeType: null,
+      genderUnset: false,
+      incomeTypeUnset: false,
+    };
+  }
+  if (!employeeId) {
+    throw new Error("xero-employee-read needs the employee id from the create step.");
+  }
+  const details = await deps.ports.employees.getEmployee(employeeId);
+  return {
+    checked: true,
+    employeeId,
+    superMembershipId: membershipForFund(details, superFundId),
+    gender: details.gender,
+    incomeType: details.incomeType,
+    genderUnset: isUnset(details.gender),
+    incomeTypeUnset: isUnset(details.incomeType),
+  };
+}
+
+async function finalisePayTemplate(
+  employeeId: string | null,
+  superMembershipId: string | null,
+  deps: RunDeps,
+): Promise<PayTemplateResult> {
+  if (deps.mode === "shadow") {
+    return { updated: false, template: buildPayTemplate(null) };
+  }
+  if (!employeeId || !superMembershipId) {
+    throw new Error("xero-employee-finalise needs an employee id and the form fund's SuperMembershipID.");
+  }
+  const template = buildPayTemplate(superMembershipId);
+  await deps.ports.employees.updatePayTemplate(employeeId, template);
+  return { updated: true, template };
+}
+
+async function postPattyWebhook(
+  record: InstructorRecord,
+  employeeId: string | null,
+  contactId: string | null,
+  orgShortCode: string,
+  deps: RunDeps,
+): Promise<WebhookResult> {
+  const payload = buildPattyWebhookPayload({ record, employeeId, contactId, orgShortCode });
+  if (deps.mode === "shadow") return { posted: false, payload };
+  await deps.ports.webhook.post(payload);
+  return { posted: true, payload };
 }
 
 async function upsertContact(record: InstructorRecord, deps: RunDeps): Promise<ContactStepResult> {

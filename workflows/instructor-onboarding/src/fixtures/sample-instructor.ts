@@ -19,9 +19,12 @@ const SAMPLE: AirtableApiRecord = {
     State: "VIC",
     "Postal Code": "2026",
     ABN: "12345678901",
+    "ABN Registered for GST": [{ name: "YES" }],
     BSB: "062000",
     Account: "12345678",
     "Bank Account Number": "55556666",
+    "Emergency Contact Name": "Sam Nguyen",
+    "Emergency Contact Mobile": "0499888777",
     Certificate: [{ id: "att1", url: "https://example.invalid/cert.pdf", filename: "cert.pdf" }],
   },
 };

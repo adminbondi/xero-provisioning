@@ -1,16 +1,28 @@
 import { emailsMatch } from "../match.ts";
+import { signWebhookBody } from "./webhook-sign.ts";
 import type {
   AirtableListArgs,
   AirtablePort,
   ContactMatch,
   EmailPort,
+  EmployeeDetails,
   PayrollCalendar,
   Ports,
   SlackPort,
+  SuperMembershipRef,
+  WebhookPort,
   XeroContactPort,
   XeroEmployeePort,
 } from "../ports.ts";
-import type { AirtableApiRecord, OutboundEmail, SlackMessage, XeroContactPayload, XeroEmployeePayload } from "../types.ts";
+import type {
+  AirtableApiRecord,
+  OutboundEmail,
+  PattyWebhookPayload,
+  SlackMessage,
+  XeroContactPayload,
+  XeroEmployeePayload,
+  XeroPayTemplate,
+} from "../types.ts";
 
 const PAYROLL_BASE = "https://api.xero.com/payroll.xro/1.0";
 const ACCOUNTING_BASE = "https://api.xero.com/api.xro/2.0";
@@ -231,6 +243,46 @@ export function createXeroEmployeePort(options: {
       }
       return { employeeId: created.EmployeeID, created: true };
     },
+    async getEmployee(employeeId: string): Promise<EmployeeDetails> {
+      const token = await options.getAccessToken();
+      const json = await parseJson(
+        await options.fetch(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
+          headers: xeroHeaders(token, options.tenantId),
+        }),
+      );
+      const employee = asArray(json, "Employees")[0];
+      if (!employee) throw new Error(`Xero employee GET did not return ${employeeId}.`);
+      return {
+        employeeId,
+        gender: nullableString(employee.Gender),
+        incomeType: nullableString(employee.IncomeType),
+        superMemberships: asArray(employee, "SuperMemberships").map(readSuperMembership),
+      };
+    },
+    async updatePayTemplate(employeeId: string, template: XeroPayTemplate) {
+      const token = await options.getAccessToken();
+      const headers = xeroHeaders(token, options.tenantId);
+      headers.set("Content-Type", "application/json");
+      await parseJson(
+        await options.fetch(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ Employees: [{ EmployeeID: employeeId, PayTemplate: template }] }),
+        }),
+      );
+    },
+  };
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function readSuperMembership(row: Record<string, unknown>): SuperMembershipRef {
+  return {
+    superMembershipId: typeof row.SuperMembershipID === "string" ? row.SuperMembershipID : "",
+    superFundId: typeof row.SuperFundID === "string" ? row.SuperFundID : "",
+    employeeNumber: typeof row.EmployeeNumber === "string" ? row.EmployeeNumber : "",
   };
 }
 
@@ -282,6 +334,33 @@ export function createXeroContactPort(options: {
         throw new Error("Xero contact upsert did not return ContactID.");
       }
       return { contactId: saved.ContactID, created: !existingContactId };
+    },
+  };
+}
+
+export function createPattyWebhookPort(options: {
+  fetch: typeof fetch;
+  url: string;
+  signingSecret: string;
+}): WebhookPort {
+  return {
+    async post(payload: PattyWebhookPayload) {
+      if (!options.url) throw new Error("PATTY_WEBHOOK_URL is not set.");
+      if (!options.signingSecret) throw new Error("PATTY_WEBHOOK_SIGNING_SECRET is not set.");
+      const body = JSON.stringify(payload);
+      const signature = await signWebhookBody(options.signingSecret, body);
+      const response = await options.fetch(options.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Balance-Moves-Signature": signature,
+        },
+        body,
+      });
+      if (!response.ok) {
+        throw new Error(`Patty webhook HTTP ${response.status}.`);
+      }
+      return { delivered: true };
     },
   };
 }
@@ -404,5 +483,10 @@ export function createLivePorts(
     }),
     slack: createSlackPort({ fetch: fetchImpl, token: live.SLACK_BOT_TOKEN }),
     email: createGmailPort({ fetch: fetchImpl, getAccessToken: getGmailToken }),
+    webhook: createPattyWebhookPort({
+      fetch: fetchImpl,
+      url: env.PATTY_WEBHOOK_URL ?? "",
+      signingSecret: env.PATTY_WEBHOOK_SIGNING_SECRET ?? "",
+    }),
   };
 }

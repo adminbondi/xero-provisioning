@@ -2,7 +2,7 @@
 
 Rebuild of Zapier Zap 364623444, steps 1–7, for Balance Moves (Bondi). Jira steps 8–9 are not implemented. There is no custom-code step: the published map has none, and the placeholder slot has been removed.
 
-Host (decided, not deployed): one Cloudflare Worker. An Airtable automation posts the new row to `POST /intake`. The Worker puts it on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each of the seven steps is its own `step.do`. A daily cron is the safety net for rows that never reached the queue. D1 and KV are not used.
+Host (decided, not deployed): one Cloudflare Worker. An Airtable automation posts the new row to `POST /intake`. The Worker puts it on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each Zap step is its own `step.do`, followed by an employee read, a pay-template finalise, and a Patty webhook. A daily cron is the safety net for rows that never reached the queue. D1 and KV are not used.
 
 The repo README has the full write-up, including why there is no durable store, the `+61` mobile oddity (behavior unchanged; proposed E.164 is `+614…`), and switchover (do not switch the Zap off without Thiago's explicit go).
 
@@ -83,7 +83,9 @@ In the Instructors table, add an automation: when a record is created, run `airt
 | `GMAIL_CLIENT_SECRET` | Google | OAuth client secret. |
 | `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. |
 | `SAFETY_NET_NOT_BEFORE` | Worker | Switchover timestamp. Unset means the daily check lists nothing. |
-| `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, and Gmail writes. |
+| `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, Gmail, and webhook writes. |
+| `PATTY_WEBHOOK_URL` | Patty | Placeholder. Not set. A dry run logs the payload and does not POST. |
+| `PATTY_WEBHOOK_SIGNING_SECRET` | Patty | Placeholder for the HMAC secret. Not set. |
 
 `DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). That does not use the live id, so the same record can be replayed live after `DRY_RUN` is set to `false`. A second dry run of the same record does not start another instance.
 
@@ -103,8 +105,7 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `contact-bank-bsb-concat`
 - `contact-mobile-plus61-prefix` — still `+61` plus the raw mobile (`0412…` becomes `+610412…`). Proposed E.164 drops the trunk 0 (`+614…`). Not applied.
 - `employee-bank-left-empty`
-- `income-type-and-tax-scale-null`
-- `abn-on-contact-not-employee`
+- `tax-scale-type-null`
 - `tfn-in-slack-and-email`
 - `no-view-or-filter`
 - `attachments-included-but-unused`
@@ -124,3 +125,8 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `no-durable-store`
 - `reject-numeric-airtable-fields`
 - `notifications-not-resent`
+- `abn-on-tax-declaration`
+- `ivan-sgc-fixed-amount`
+- `pay-template-full-replace`
+- `accounts-payable-tax-input`
+- `emergency-contact-webhook-only`

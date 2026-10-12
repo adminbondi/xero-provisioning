@@ -88,6 +88,27 @@ function readFirst(fields: Record<string, unknown>, keys: readonly string[]): st
   return "";
 }
 
+/** Multiple-select or plain text. Absent is empty. YES wins if both answers are present. */
+export function readAbnRegisteredForGst(fields: Record<string, unknown>): "YES" | "NO" | "" {
+  const names = selectNames(fields["ABN Registered for GST"]);
+  if (names.includes("YES")) return "YES";
+  if (names.includes("NO")) return "NO";
+  return "";
+}
+
+function selectNames(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (!Array.isArray(value)) return [];
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string") names.push(item);
+    else if (item && typeof item === "object" && typeof (item as { name?: unknown }).name === "string") {
+      names.push((item as { name: string }).name);
+    }
+  }
+  return names;
+}
+
 function extractAttachments(fields: Record<string, unknown>): AirtableAttachment[] {
   const attachments: AirtableAttachment[] = [];
   for (const [field, value] of Object.entries(fields)) {
@@ -129,8 +150,11 @@ export function parseAirtableRecord(raw: AirtableApiRecord): InstructorRecord {
     state: readText(fields, AIRTABLE_FIELDS.state),
     postalCode: readText(fields, AIRTABLE_FIELDS.postalCode),
     abn: readText(fields, AIRTABLE_FIELDS.abn),
+    abnRegisteredForGst: readAbnRegisteredForGst(fields),
     bsb: readText(fields, AIRTABLE_FIELDS.bsb),
     account: readFirst(fields, [AIRTABLE_FIELDS.account, "Bank Account Number"]),
+    emergencyContactName: readText(fields, "Emergency Contact Name"),
+    emergencyContactMobile: readText(fields, "Emergency Contact Mobile"),
     attachments: extractAttachments(fields),
     rawFields: structuredClone(fields),
   };

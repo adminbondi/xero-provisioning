@@ -1,6 +1,6 @@
 /**
  * DRY RUN — in-memory fakes only.
- * Does not read credentials and does not call Xero, Slack, Gmail, or Airtable.
+ * Does not read credentials and does not call Xero, Slack, Gmail, Airtable, or a webhook URL.
  */
 import { defaultConfig } from "./config.ts";
 import { createFakePorts } from "./fakes.ts";
@@ -18,7 +18,7 @@ const result = await runInstructorOnboarding(sampleAirtableRecord(), {
 console.log(
   JSON.stringify(
     {
-      banner: "DRY RUN — in-memory fakes only. No Xero, Slack, Gmail, or Airtable calls.",
+      banner: "DRY RUN — in-memory fakes only. No Xero, Slack, Gmail, Airtable, or webhook calls.",
       recordId: result.recordId,
       employeeId: result.employee.employeeId,
       employeeCreated: result.employee.created,

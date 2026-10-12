@@ -36,6 +36,17 @@ export function contactNumberFor(recordId: string): string {
   return value;
 }
 
+/**
+ * Payroll AU has no GST-registered flag.
+ * Proposed, and not confirmed by Thiago: form "ABN Registered for GST" YES means
+ * AccountsPayableTaxType INPUT (GST on Expenses), and NO means BASEXCLUDED (BAS Excluded).
+ * Until he confirms, both answers stay INPUT. When in doubt, keep the GST.
+ */
+export function accountsPayableTaxType(abnRegisteredForGst: string): "INPUT" {
+  void abnRegisteredForGst;
+  return "INPUT";
+}
+
 export function buildContactPayload(record: InstructorRecord): XeroContactPayload {
   return {
     Name: instructorFullName(record),
@@ -44,6 +55,7 @@ export function buildContactPayload(record: InstructorRecord): XeroContactPayloa
     EmailAddress: record.email,
     ContactNumber: contactNumberFor(record.recordId),
     TaxNumber: record.abn,
+    AccountsPayableTaxType: accountsPayableTaxType(record.abnRegisteredForGst),
     BankAccountDetails: contactBankAccount(record.bsb, record.account),
     Phones: [
       {

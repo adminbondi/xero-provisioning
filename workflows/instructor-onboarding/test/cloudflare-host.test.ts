@@ -103,13 +103,18 @@ test("the safety net enqueues only rows after the cutoff that have no workflow",
   assert.equal(fake.calls.some((call) => call.port === "contacts"), false);
 });
 
-test("each of the seven steps has its own retry settings", () => {
+test("each pipeline step has its own retry settings", () => {
   assert.deepEqual(Object.keys(STEP_CONFIG), [...PIPELINE_STEPS]);
   assert.equal(STEP_CONFIG["airtable-record"].retries.limit, 0);
   assert.equal(STEP_CONFIG["super-fund"].retries.limit, 0);
   assert.equal(STEP_CONFIG.gender.retries.limit, 0);
   assert.equal(STEP_CONFIG["xero-employee"].retries.limit, 5);
+  assert.equal(STEP_CONFIG["xero-employee-read"].retries.limit, 5);
+  assert.equal(STEP_CONFIG["xero-employee-finalise"].retries.limit, 5);
+  assert.equal(STEP_CONFIG["xero-employee-read"].timeout, "2 minutes");
   assert.equal(STEP_CONFIG["xero-contact"].retries.limit, 5);
+  assert.equal(STEP_CONFIG["patty-webhook"].retries.limit, 5);
+  assert.equal(STEP_CONFIG["patty-webhook"].timeout, "1 minute");
   assert.notEqual(STEP_CONFIG.slack.retries.delay, STEP_CONFIG["xero-employee"].retries.delay);
   assert.equal(STEP_CONFIG.email.retries.backoff, "exponential");
   const script = readFileSync(new URL("../airtable/on-record-created.js", import.meta.url), "utf8");
@@ -174,6 +179,9 @@ test("dry-run ports refuse every external call", async () => {
   const { dryRunPorts } = await import("../src/host/dry-run-ports.ts");
   const ports = dryRunPorts();
   await assert.rejects(() => ports.employees.createEmployee({} as never, "key"), /DRY_RUN blocked employees.createEmployee/);
+  await assert.rejects(() => ports.employees.getEmployee("employee-1"), /DRY_RUN blocked employees.getEmployee/);
+  await assert.rejects(() => ports.employees.updatePayTemplate("employee-1", {} as never), /DRY_RUN blocked employees.updatePayTemplate/);
+  await assert.rejects(() => ports.webhook.post({} as never), /DRY_RUN blocked webhook.post/);
   await assert.rejects(() => ports.contacts.upsertContact({} as never), /DRY_RUN blocked contacts.upsertContact/);
   await assert.rejects(() => ports.slack.postMessage({ channel: "C", text: "x" }), /DRY_RUN blocked slack.postMessage/);
   await assert.rejects(() => ports.email.send({} as never), /DRY_RUN blocked email.send/);

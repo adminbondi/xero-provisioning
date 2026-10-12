@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { parseAirtableRecord } from "../src/airtable/parse-record.ts";
 import { CONTRACTORS_GROUP_NAME } from "../src/config.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
-import { buildContactPayload, contactBankAccount, contactMobile, contactNumberFor, proposedE164Mobile } from "../src/mappings/contact.ts";
+import { accountsPayableTaxType, buildContactPayload, contactBankAccount, contactMobile, contactNumberFor, proposedE164Mobile } from "../src/mappings/contact.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
 import { runtime } from "./helpers.ts";
 
@@ -22,6 +22,10 @@ test("step 5 builds the create/update contact, including concatenated bank detai
   assert.equal(payload.LastName, "Nguyen");
   assert.equal(payload.EmailAddress, record.email);
   assert.equal(payload.TaxNumber, "12345678901");
+  assert.equal(payload.AccountsPayableTaxType, "INPUT");
+  assert.equal(accountsPayableTaxType("YES"), "INPUT");
+  assert.equal(accountsPayableTaxType("NO"), "INPUT");
+  assert.equal(JSON.stringify(payload).includes("Sam Nguyen"), false);
   assert.equal(payload.BankAccountDetails, "06200012345678");
   assert.equal(payload.Phones[0]?.PhoneType, "MOBILE");
   assert.equal(payload.Phones[0]?.PhoneNumber, "+610412345678");

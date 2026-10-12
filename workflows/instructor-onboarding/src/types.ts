@@ -28,8 +28,12 @@ export interface InstructorRecord {
   state: string;
   postalCode: string;
   abn: string;
+  /** Form answer YES, NO, or empty. It does not choose the contact tax type until Thiago confirms. */
+  abnRegisteredForGst: "YES" | "NO" | "";
   bsb: string;
   account: string;
+  emergencyContactName: string;
+  emergencyContactMobile: string;
   attachments: AirtableAttachment[];
   rawFields: Record<string, unknown>;
 }
@@ -46,7 +50,7 @@ export interface XeroEmployeePayload {
   JobTitle: null;
   EmploymentType: "CONTRACTOR";
   Status: "ACTIVE";
-  IncomeType: null;
+  IncomeType: "NONEMPLOYEE";
   StartDate: string;
   PayrollCalendarID: string;
   SuperMemberships: [
@@ -58,8 +62,12 @@ export interface XeroEmployeePayload {
   TaxDeclaration: {
     EmploymentBasis: "NONEMPLOYEE";
     TaxFileNumber: string;
+    ABN: string;
+    AustralianResidentForTaxPurposes: true;
     ResidencyStatus: "AUSTRALIANRESIDENT";
     TaxScaleType: null;
+    TaxFreeThresholdClaimed: false;
+    HasHELPDebt: false;
   };
   HomeAddress: {
     AddressLine1: string;
@@ -78,6 +86,11 @@ export interface XeroContactPayload {
   EmailAddress: string;
   ContactNumber: string;
   TaxNumber: string;
+  /**
+   * GST on Expenses. Payroll AU has no GST-registered flag.
+   * YES and NO both stay INPUT until Thiago confirms the split.
+   */
+  AccountsPayableTaxType: "INPUT";
   BankAccountDetails: string;
   Phones: [
     {
@@ -98,6 +111,39 @@ export interface XeroContactPayload {
     },
   ];
   ContactGroups: [{ Name: "Contractors" }];
+}
+
+/** One SGC line. No percentage, amount, or minimum monthly earnings. */
+export interface XeroSuperLine {
+  SuperMembershipID: string | null;
+  ContributionType: "SGC";
+  CalculationType: "FIXEDAMOUNT";
+  ExpenseAccountCode: "478";
+  LiabilityAccountCode: "826";
+}
+
+/**
+ * Full desired pay template. A PayTemplate update is treated as a replace,
+ * so earnings, deductions, reimbursements, and leave are sent empty.
+ */
+export interface XeroPayTemplate {
+  EarningsLines: [];
+  DeductionLines: [];
+  SuperLines: [XeroSuperLine];
+  ReimbursementLines: [];
+  LeaveLines: [];
+}
+
+export interface PattyWebhookPayload {
+  xeroEmployeeId: string | null;
+  xeroContactId: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  airtableRecordId: string;
+  emergencyContactName: string;
+  emergencyContactMobile: string;
+  xeroEmployeeUrl: string | null;
 }
 
 export interface OutboundEmail {
@@ -143,5 +189,22 @@ export interface WorkflowSuccess {
   };
   slack: SlackMessage & { sent: boolean };
   email: { sent: boolean; message: OutboundEmail };
+  employeeRead: {
+    checked: boolean;
+    employeeId: string | null;
+    superMembershipId: string | null;
+    gender: string | null;
+    incomeType: string | null;
+    genderUnset: boolean;
+    incomeTypeUnset: boolean;
+  };
+  payTemplate: {
+    updated: boolean;
+    template: XeroPayTemplate;
+  };
+  webhook: {
+    posted: boolean;
+    payload: PattyWebhookPayload;
+  };
   flags: string[];
 }

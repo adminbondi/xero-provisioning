@@ -19,6 +19,7 @@ export {
 } from "./config.ts";
 export {
   AirtableFieldTypeError,
+  InvalidAbnError,
   MissingFieldsError,
   PayrollCalendarError,
   UnknownGenderError,

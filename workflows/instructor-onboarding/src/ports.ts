@@ -1,4 +1,12 @@
-import type { AirtableApiRecord, OutboundEmail, SlackMessage, XeroContactPayload, XeroEmployeePayload } from "./types.ts";
+import type {
+  AirtableApiRecord,
+  OutboundEmail,
+  PattyWebhookPayload,
+  SlackMessage,
+  XeroContactPayload,
+  XeroEmployeePayload,
+  XeroPayTemplate,
+} from "./types.ts";
 
 export interface AirtableListArgs {
   baseId: string;
@@ -24,6 +32,19 @@ export interface EmployeeMatch {
   email: string;
 }
 
+export interface SuperMembershipRef {
+  superMembershipId: string;
+  superFundId: string;
+  employeeNumber: string;
+}
+
+export interface EmployeeDetails {
+  employeeId: string;
+  gender: string | null;
+  incomeType: string | null;
+  superMemberships: SuperMembershipRef[];
+}
+
 export interface XeroEmployeePort {
   listPayrollCalendars(): Promise<PayrollCalendar[]>;
   findEmployeesByEmail(email: string): Promise<EmployeeMatch[]>;
@@ -31,6 +52,10 @@ export interface XeroEmployeePort {
     payload: XeroEmployeePayload,
     idempotencyKey: string,
   ): Promise<{ employeeId: string; created: boolean }>;
+  /** One GET of `/Employees/{EmployeeID}`. */
+  getEmployee(employeeId: string): Promise<EmployeeDetails>;
+  /** One POST of `/Employees/{EmployeeID}` with the full PayTemplate. Replaces the stored template. */
+  updatePayTemplate(employeeId: string, template: XeroPayTemplate): Promise<void>;
 }
 
 export interface ContactMatch {
@@ -56,10 +81,15 @@ export interface EmailPort {
   send(message: OutboundEmail): Promise<{ messageId: string }>;
 }
 
+export interface WebhookPort {
+  post(payload: PattyWebhookPayload): Promise<{ delivered: boolean }>;
+}
+
 export interface Ports {
   airtable: AirtablePort;
   employees: XeroEmployeePort;
   contacts: XeroContactPort;
   slack: SlackPort;
   email: EmailPort;
+  webhook: WebhookPort;
 }

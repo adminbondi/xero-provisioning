@@ -31,10 +31,15 @@ test("step 4 builds the contractor employee and keeps the Zap oddities", () => {
   assert.equal(payload.EmploymentType, "CONTRACTOR");
   assert.equal(payload.Status, "ACTIVE");
   assert.equal(payload.EmploymentType, "CONTRACTOR");
-  assert.equal(payload.IncomeType, null);
+  assert.equal(payload.IncomeType, "NONEMPLOYEE");
   assert.equal(payload.TaxDeclaration.EmploymentBasis, "NONEMPLOYEE");
   assert.equal(payload.TaxDeclaration.TaxScaleType, null);
   assert.equal(payload.TaxDeclaration.ResidencyStatus, "AUSTRALIANRESIDENT");
+  assert.equal(payload.TaxDeclaration.AustralianResidentForTaxPurposes, true);
+  assert.equal(payload.TaxDeclaration.TaxFreeThresholdClaimed, false);
+  assert.equal(payload.TaxDeclaration.HasHELPDebt, false);
+  assert.equal(payload.TaxDeclaration.ABN, "12345678901");
+  assert.equal(payload.TaxDeclaration.ABN.length, 11);
   assert.equal(payload.TaxDeclaration.TaxFileNumber, "123456782");
   assert.equal(payload.SuperMemberships[0]?.SuperFundID, "4caabd49-1d08-4d8b-958b-d933a113e9c9");
   assert.equal(payload.SuperMemberships[0]?.EmployeeNumber, "SM-100200");
@@ -49,8 +54,8 @@ test("step 4 builds the contractor employee and keeps the Zap oddities", () => {
   assert.equal(payload.Phone, null);
   assert.equal(payload.JobTitle, null);
   assert.deepEqual(payload.BankAccounts, []);
-  assert.equal(JSON.stringify(payload).includes("12345678901"), false);
   assert.equal(JSON.stringify(payload).includes("cert.pdf"), false);
+  assert.equal(JSON.stringify(payload).includes("Sam Nguyen"), false);
 });
 
 test("step 4 resolves the Zap StartDate expression as today in Australia/Sydney", () => {
