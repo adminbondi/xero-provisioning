@@ -311,7 +311,10 @@ export function createXeroEmployeePort(options: {
         await fetchImpl(`${PAYROLL_BASE}/Employees`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ Employees: [payload] }),
+          // Payroll AU POST /Employees wants a bare array. A `{Employees:[...]}`
+          // object fails as UpdateEmployeeRequest. Same shape as payroll
+          // `xero_api/client.py` `update_payroll_employee_calendar`.
+          body: JSON.stringify([payload]),
         }),
       );
       const created = asArray(json, "Employees")[0];
@@ -344,7 +347,8 @@ export function createXeroEmployeePort(options: {
         await fetchImpl(`${PAYROLL_BASE}/Employees/${encodeURIComponent(employeeId)}`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ Employees: [{ EmployeeID: employeeId, PayTemplate: template }] }),
+          // POST /Employees/{id} is also a bare array. Responses stay `{Employees:[...]}`.
+          body: JSON.stringify([{ EmployeeID: employeeId, PayTemplate: template }]),
         }),
       );
     },
@@ -407,6 +411,8 @@ export function createXeroContactPort(options: {
       const headers = xeroHeaders(token, options.tenantId);
       headers.set("Content-Type", "application/json");
       const body = existingContactId ? { ...payload, ContactID: existingContactId } : payload;
+      // Accounting POST /Contacts stays `{Contacts:[...]}`. Payroll
+      // `xero_api/client.py` `update_contact` uses that wrapper. Payroll AU does not.
       const json = await parseJson(
         await fetchImpl(`${ACCOUNTING_BASE}/Contacts`, {
           method: "POST",

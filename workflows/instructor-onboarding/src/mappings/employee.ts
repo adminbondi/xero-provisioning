@@ -86,8 +86,14 @@ export function buildPayTemplate(superMembershipId: string | null): XeroPayTempl
   };
 }
 
-export function employeeIdempotencyKey(recordId: string): string {
-  const key = `instructor-onboarding:${recordId}:employee`;
+/**
+ * Xero stores this key against the exact request body.
+ * A retry instance must not reuse the failed instance's key, or Xero returns
+ * "Idempotency Key is used with a different request."
+ * The first live instance id is the Airtable record id, so that key is unchanged.
+ */
+export function employeeIdempotencyKey(instanceId: string): string {
+  const key = `instructor-onboarding:${instanceId}:employee`;
   if (key.length > 128) {
     throw new Error("Employee idempotency key exceeds Xero's 128 character limit.");
   }

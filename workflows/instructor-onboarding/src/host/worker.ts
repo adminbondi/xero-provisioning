@@ -124,7 +124,11 @@ function bindStep(step: WorkflowStep): StepDo {
 
 export class InstructorOnboardingWorkflow extends WorkflowEntrypoint<Env, AirtableApiRecord> {
   async run(event: WorkflowEvent<AirtableApiRecord>, step: WorkflowStep): Promise<void> {
-    await runOnboardingSteps(event.payload, workflowDeps(this.env), bindStep(step));
+    await runOnboardingSteps(
+      event.payload,
+      { ...workflowDeps(this.env), instanceId: event.instanceId },
+      bindStep(step),
+    );
   }
 }
 

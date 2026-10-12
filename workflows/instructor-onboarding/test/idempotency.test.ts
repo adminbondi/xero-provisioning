@@ -42,6 +42,11 @@ test("a repeated employee create with the same idempotency key does not insert a
   assert.equal(fake.employees.length, 1);
   assert.equal(fake.calls.filter((call) => call.method === "createEmployee").length, 1);
   assert.equal(employeeIdempotencyKey("recInstructor001"), "instructor-onboarding:recInstructor001:employee");
+  assert.equal(
+    employeeIdempotencyKey("recInstructor001-retry-1"),
+    "instructor-onboarding:recInstructor001-retry-1:employee",
+  );
+  assert.notEqual(employeeIdempotencyKey("recInstructor001"), employeeIdempotencyKey("recInstructor001-retry-1"));
   assert.equal(fake.employees[0]?.payload?.FirstName, "Avery");
   const again = await fake.ports.employees.createEmployee(
     first.employee.payload,
