@@ -27,7 +27,12 @@ export function runtime(options?: FakeOptions, extra?: Partial<RunDeps>): { fake
       mode: "live",
       now: () => new Date(FIXED_NOW),
       ...extra,
-      config: { ...defaultConfig(), payrollCalendarId: "cal-weekly", ...extra?.config },
+      config: {
+        ...defaultConfig(),
+        payrollCalendarId: "cal-weekly",
+        pattyWebhookUrl: "https://patty-webhook.invalid/onboarding",
+        ...extra?.config,
+      },
     },
   };
 }

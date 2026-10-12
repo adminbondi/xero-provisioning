@@ -396,6 +396,10 @@ async function postPattyWebhook(
 ): Promise<WebhookResult> {
   const payload = buildPattyWebhookPayload({ record, employeeId, contactId, orgShortCode });
   if (deps.mode === "shadow" || blocked(match)) return { posted: false, payload };
+  if (!configOf(deps).pattyWebhookUrl) {
+    console.log(JSON.stringify({ event: "patty-webhook-skipped", recordId: record.recordId }));
+    return { posted: false, payload };
+  }
   await deps.ports.webhook.post(payload);
   return { posted: true, payload };
 }
