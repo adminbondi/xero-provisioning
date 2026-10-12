@@ -1,0 +1,19 @@
+{
+  "name": "@balancemoves/instructor-onboarding",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Balance Moves instructor onboarding. Rebuild of Zapier Zap 364623444 steps 1-7 (Airtable to Xero employee and contact, Slack, and email).",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "dry-run": "node --experimental-strip-types src/dry-run.ts"
+  },
+  "engines": {
+    "node": ">=22.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "^5.8.3"
+  }
+}

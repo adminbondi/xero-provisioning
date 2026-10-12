@@ -1,0 +1,9 @@
+{
+  "name": "xero-provisioning",
+  "private": true,
+  "scripts": {
+    "test": "npm test --prefix workflows/instructor-onboarding",
+    "typecheck": "npm run typecheck --prefix workflows/instructor-onboarding",
+    "dry-run": "npm run dry-run --prefix workflows/instructor-onboarding"
+  }
+}
