@@ -6,7 +6,8 @@
     "enabled": true
   },
   "vars": {
-    "DRY_RUN": "true"
+    "DRY_RUN": "true",
+    "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z"
   },
   "workflows": [
     {
@@ -33,7 +34,7 @@
   "kv_namespaces": [
     {
       "binding": "AIRTABLE_CURSOR",
-      "id": "00000000000000000000000000000000"
+      "id": "4c20b4595aa54066a791d522e09e52ed"
     }
   ],
   "triggers": {
