@@ -17,9 +17,10 @@ import { payrollFieldPresence } from "../sensitive.ts";
 import { pollNewInstructors } from "./airtable-poll.ts";
 import { dryRunPorts } from "./dry-run-ports.ts";
 import { bindFetch, createAirtablePort, createLivePorts, fetchAirtableRecord, missingLiveEnv, type LiveEnv } from "./http.ts";
-import { dryRunEnabled, handleIntake, workflowInstanceId } from "./intake.ts";
+import { dryRunEnabled, handleIntake } from "./intake.ts";
+import { isolateOauthSession, kvRefreshTokenStore } from "./xero-refresh.ts";
 import { handleManualRun, summariseParsed } from "./manual-run.ts";
-import { startWorkflowForRecord } from "./queue-consumer.ts";
+import { readWorkflowPhase, startWorkflowForRecord } from "./queue-consumer.ts";
 import { runOnboardingSteps, type RunDeps, type StepDo } from "../run.ts";
 import type { AirtableApiRecord } from "../types.ts";
 import type { KvNamespace, MessageBatch, QueueBinding, WorkflowBinding } from "cloudflare:workers";
@@ -29,7 +30,7 @@ export { AIRTABLE_POLL_CRON };
 export interface Env extends LiveEnv {
   ONBOARDING_WORKFLOW: WorkflowBinding<AirtableApiRecord>;
   INTAKE_QUEUE: QueueBinding<AirtableApiRecord>;
-  /** Created-time watermark. Not the Xero duplicate lock. */
+  /** Created-time watermark, Slack send claims, and the Xero refresh token. Not the duplicate lock. */
   AIRTABLE_CURSOR: KvNamespace;
   INGRESS_TOKEN: string;
   /** Default true. Only the string "false" allows Xero, Slack, and Gmail writes. */
@@ -93,7 +94,11 @@ function workflowDeps(env: Env): RunDeps {
     throw new Error(`Missing Worker secrets: ${missing.join(", ")}`);
   }
   return {
-    ports: createLivePorts(envRecord(env), bindFetch(fetch), { slackOnce: env.AIRTABLE_CURSOR }),
+    ports: createLivePorts(envRecord(env), bindFetch(fetch), {
+      slackOnce: env.AIRTABLE_CURSOR,
+      xeroRefresh: kvRefreshTokenStore(env.AIRTABLE_CURSOR),
+      oauthSession: isolateOauthSession,
+    }),
     mode: "live",
     config,
   };
@@ -159,12 +164,7 @@ async function onManualRun(request: Request, env: Env): Promise<Response> {
         tableId: env.AIRTABLE_TABLE_ID || AIRTABLE_TABLE_ID,
         recordId,
       }),
-    startWorkflow: (record) =>
-      startWorkflowForRecord(
-        record,
-        (id, payload) => env.ONBOARDING_WORKFLOW.create({ id, params: payload }).then(() => undefined),
-        { dryRun },
-      ),
+    startWorkflow: (record) => startRecord(env, record, dryRun),
     runShadow: dryRun
       ? async (record) => {
           const parsed = parseAirtableRecord(record);
@@ -179,16 +179,12 @@ async function onQueue(batch: MessageBatch<AirtableApiRecord>, env: Env): Promis
   for (const message of batch.messages) {
     try {
       const dryRun = dryRunEnabled(env.DRY_RUN);
-      const outcome = await startWorkflowForRecord(
-        message.body,
-        (id, record) => env.ONBOARDING_WORKFLOW.create({ id, params: record }).then(() => undefined),
-        { dryRun },
-      );
+      const outcome = await startRecord(env, message.body, dryRun);
       console.log(
         JSON.stringify({
-          event: outcome === "duplicate" ? "workflow-duplicate" : "workflow-started",
+          event: outcome.result === "duplicate" ? "workflow-duplicate" : outcome.result === "rerun" ? "workflow-rerun" : "workflow-started",
           recordId: message.body.id,
-          instanceId: workflowInstanceId(message.body.id, dryRun),
+          instanceId: outcome.instanceId,
           dryRun,
         }),
       );
@@ -204,6 +200,17 @@ async function onQueue(batch: MessageBatch<AirtableApiRecord>, env: Env): Promis
       message.retry();
     }
   }
+}
+
+function startRecord(env: Env, record: AirtableApiRecord, dryRun: boolean) {
+  return startWorkflowForRecord(
+    record,
+    (id, payload) => env.ONBOARDING_WORKFLOW.create({ id, params: payload }).then(() => undefined),
+    {
+      dryRun,
+      instanceStatus: (id) => readWorkflowPhase((instanceId) => env.ONBOARDING_WORKFLOW.get(instanceId), id),
+    },
+  );
 }
 
 async function onScheduled(cron: string, env: Env): Promise<void> {

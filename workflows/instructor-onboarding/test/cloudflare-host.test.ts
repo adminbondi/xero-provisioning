@@ -105,8 +105,8 @@ test("DRY_RUN defaults on and uses a distinct instance id", async () => {
     if (started.includes(id)) throw new Error("Workflow instance already exists");
     started.push(id);
   };
-  assert.equal(await startWorkflowForRecord(record, start, { dryRun: true }), "started");
-  assert.equal(await startWorkflowForRecord(record, start, { dryRun: false }), "started");
+  assert.equal((await startWorkflowForRecord(record, start, { dryRun: true })).result, "started");
+  assert.equal((await startWorkflowForRecord(record, start, { dryRun: false })).result, "started");
   assert.deepEqual(started, ["recInstructor001-dry", "recInstructor001"]);
 });
 

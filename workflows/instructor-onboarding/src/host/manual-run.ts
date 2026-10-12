@@ -1,11 +1,12 @@
 import { bearerMatches, workflowInstanceId } from "./intake.ts";
+import type { WorkflowStart } from "./queue-consumer.ts";
 import type { PayrollFieldPresence } from "../sensitive.ts";
 import type { AirtableApiRecord, WorkflowSuccess } from "../types.ts";
 
 /**
  * POST /run processes one Airtable record id immediately.
  * It does not read or write the hourly KV cursors (`created-after:dry`, `created-after:live`).
- * The Workflow instance id is the dedupe lock. A second call does not run again.
+ * The Workflow instance id is the dedupe lock. A second call does not run again, unless that instance failed.
  * Dry run may execute the shadow pipeline for the response. Live only starts the Workflow.
  */
 
@@ -27,7 +28,7 @@ export interface ManualRunDeps {
   dryRun: boolean;
   slackChannelId: string;
   loadRecord(recordId: string): Promise<AirtableApiRecord>;
-  startWorkflow(record: AirtableApiRecord): Promise<"started" | "duplicate">;
+  startWorkflow(record: AirtableApiRecord): Promise<WorkflowStart>;
   /** Dry-run only. Live leaves this unset so the request does not write to Xero. */
   runShadow?(record: AirtableApiRecord): Promise<ManualShadowSummary>;
 }
@@ -77,15 +78,15 @@ export async function handleManualRun(request: Request, deps: ManualRunDeps): Pr
   if (record.id !== recordId) {
     return Response.json({ error: "Airtable returned a different record." }, { status: 502 });
   }
-  const instanceId = workflowInstanceId(record.id, deps.dryRun);
-  let outcome: "started" | "duplicate";
+  let outcome: WorkflowStart;
   try {
     outcome = await deps.startWorkflow(record);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Workflow could not be started.";
     return Response.json({ error: message }, { status: 502 });
   }
-  if (outcome === "duplicate") {
+  const instanceId = outcome.instanceId;
+  if (outcome.result === "duplicate") {
     return Response.json(manualBody(deps, record.id, instanceId, true, null), { status: 200 });
   }
   let summary: ManualShadowSummary | null = null;

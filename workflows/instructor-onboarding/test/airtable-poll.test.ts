@@ -231,9 +231,18 @@ test("the Airtable adapter sends the created-time filter and still rejects a vie
   );
 });
 
-test("the go-live cutoff is the env value passed in, and the production timestamp is not replaced", () => {
+test("the go-live cutoff is the env value passed in, and the production config does not reset live vars", () => {
   const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
-  assert.match(wrangler, /"SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z"/);
+  const stripped = wrangler.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const config = JSON.parse(stripped) as {
+    vars: Record<string, string>;
+    env: { preview: { vars: Record<string, string> } };
+  };
+  assert.equal(config.vars.DRY_RUN, undefined);
+  assert.equal(config.vars.SAFETY_NET_NOT_BEFORE, undefined);
+  assert.equal(config.env.preview.vars.DRY_RUN, "true");
+  assert.equal(config.env.preview.vars.SAFETY_NET_NOT_BEFORE, "2026-10-12T09:19:56Z");
+  assert.match(wrangler, /--keep-vars/);
   const previewCutoff = "2026-03-01T00:00:00.000Z";
   assert.equal(createdAfterFormula(previewCutoff), "IS_AFTER(CREATED_TIME(), '2026-03-01T00:00:00.000Z')");
   assert.equal(createdAfterFormula(previewCutoff).includes("2026-10-12T09:19:56Z"), false);

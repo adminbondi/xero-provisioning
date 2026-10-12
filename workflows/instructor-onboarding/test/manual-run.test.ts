@@ -34,9 +34,9 @@ test("a manual dry run processes one record once and a second call is a duplicat
     loadRecord: async (id: string) => ({ ...record, id }),
     startWorkflow: async (item: typeof record) => {
       const instanceId = workflowInstanceId(item.id, true);
-      if (started.includes(instanceId)) return "duplicate" as const;
+      if (started.includes(instanceId)) return { result: "duplicate" as const, instanceId };
       started.push(instanceId);
-      return "started" as const;
+      return { result: "started" as const, instanceId };
     },
     runShadow: async () => {
       shadows += 1;
@@ -93,7 +93,7 @@ test("a live manual run starts the workflow and does not run the shadow pipeline
       dryRun: false,
       slackChannelId: "C09BK6Y2WHL",
       loadRecord: async () => sampleAirtableRecord(),
-      startWorkflow: async () => "started",
+      startWorkflow: async () => ({ result: "started" as const, instanceId: "recInstructor001" }),
       runShadow: async () => {
         shadows += 1;
         throw new Error("live manual run must not execute inline");
@@ -121,7 +121,7 @@ test("manual run rejects a missing token", async () => {
       dryRun: true,
       slackChannelId: "C-DRY",
       loadRecord: async () => sampleAirtableRecord(),
-      startWorkflow: async () => "started",
+      startWorkflow: async () => ({ result: "started" as const, instanceId: "recInstructor001-dry" }),
     },
   );
   assert.equal(response.status, 401);
