@@ -57,9 +57,25 @@ export const REQUIRED_LIVE_ENV = [
 export type LiveEnvName = (typeof REQUIRED_LIVE_ENV)[number];
 export type LiveEnv = Record<LiveEnvName, string>;
 
+/** Remembers a Slack send without storing the message text. */
+export interface SlackOnceStore {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
 export interface LivePortHooks {
   onXeroRefreshToken?: (refreshToken: string) => Promise<void>;
   onGmailRefreshToken?: (refreshToken: string) => Promise<void>;
+  /** Cross-request claim so a replayed preview does not post the same Slack text twice. */
+  slackOnce?: SlackOnceStore;
+}
+
+/** Hash only. The Slack text can contain a TFN, so the key must not contain it. */
+export async function slackOnceKey(channel: string, text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${channel}\n${text}`));
+  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `slack-once:${hex}`;
 }
 
 export function missingLiveEnv(env: Readonly<Record<string, string | undefined>>): LiveEnvName[] {
@@ -430,23 +446,44 @@ export function createPattyWebhookPort(options: {
   };
 }
 
-export function createSlackPort(options: { fetch: typeof fetch; token: string }): SlackPort {
+export function createSlackPort(options: {
+  fetch: typeof fetch;
+  token: string;
+  once?: SlackOnceStore;
+}): SlackPort {
   const fetchImpl = bindFetch(options.fetch);
+  const local = new Set<string>();
   return {
     async postMessage(message: SlackMessage) {
-      const response = await fetchImpl(SLACK_POST_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${options.token}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({ channel: message.channel, text: message.text }),
-      });
-      const json = asRecord(await parseJson(response));
-      if (json.ok !== true) {
-        throw new Error(`Slack chat.postMessage failed: ${typeof json.error === "string" ? json.error : "unknown"}`);
+      const key = await slackOnceKey(message.channel, message.text);
+      if (local.has(key)) return { ts: "" };
+      local.add(key);
+      let stored = false;
+      try {
+        if (options.once) {
+          const existing = await options.once.get(key);
+          if (existing) return { ts: "" };
+          await options.once.put(key, "1");
+          stored = true;
+        }
+        const response = await fetchImpl(SLACK_POST_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${options.token}`,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({ channel: message.channel, text: message.text }),
+        });
+        const json = asRecord(await parseJson(response));
+        if (json.ok !== true) {
+          throw new Error(`Slack chat.postMessage failed: ${typeof json.error === "string" ? json.error : "unknown"}`);
+        }
+        return { ts: typeof json.ts === "string" ? json.ts : "" };
+      } catch (error) {
+        local.delete(key);
+        if (stored && options.once) await options.once.delete(key);
+        throw error;
       }
-      return { ts: typeof json.ts === "string" ? json.ts : "" };
     },
   };
 }
@@ -549,7 +586,7 @@ export function createLivePorts(
       tenantId: live.XERO_TENANT_ID,
       getAccessToken: getXeroToken,
     }),
-    slack: createSlackPort({ fetch: boundFetch, token: live.SLACK_BOT_TOKEN }),
+    slack: createSlackPort({ fetch: boundFetch, token: live.SLACK_BOT_TOKEN, once: hooks.slackOnce }),
     email: createGmailPort({ fetch: boundFetch, getAccessToken: getGmailToken }),
     webhook: createPattyWebhookPort({
       fetch: boundFetch,

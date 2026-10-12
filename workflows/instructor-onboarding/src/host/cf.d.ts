@@ -50,6 +50,7 @@ declare module "cloudflare:workers" {
   export interface KvNamespace {
     get(key: string): Promise<string | null>;
     put(key: string, value: string): Promise<void>;
+    delete(key: string): Promise<void>;
   }
 
   export interface QueueMessage<T = unknown> {

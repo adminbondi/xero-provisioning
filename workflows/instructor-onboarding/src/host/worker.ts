@@ -93,7 +93,7 @@ function workflowDeps(env: Env): RunDeps {
     throw new Error(`Missing Worker secrets: ${missing.join(", ")}`);
   }
   return {
-    ports: createLivePorts(envRecord(env), bindFetch(fetch)),
+    ports: createLivePorts(envRecord(env), bindFetch(fetch), { slackOnce: env.AIRTABLE_CURSOR }),
     mode: "live",
     config,
   };
