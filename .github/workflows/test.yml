@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        working-directory: workflows/instructor-onboarding
+        run: npm ci
+      - name: Typecheck
+        working-directory: workflows/instructor-onboarding
+        run: npm run typecheck
+      - name: Test
+        working-directory: workflows/instructor-onboarding
+        run: npm test
+      - name: Dry run
+        working-directory: workflows/instructor-onboarding
+        run: npm run dry-run
