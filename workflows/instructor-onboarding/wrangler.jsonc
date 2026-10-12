@@ -6,7 +6,8 @@
     "enabled": true
   },
   "vars": {
-    "DRY_RUN": "true"
+    "DRY_RUN": "true",
+    "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z"
   },
   "workflows": [
     {
