@@ -1,7 +1,7 @@
 import "./block-network.ts";
+import { defaultConfig } from "../src/config.ts";
 import { createFakePorts, type FakeBundle, type FakeOptions } from "../src/fakes.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
-import { MemoryWorkflowStore } from "../src/idempotency.ts";
 import type { RunDeps } from "../src/run.ts";
 import type { AirtableApiRecord } from "../src/types.ts";
 
@@ -18,18 +18,16 @@ export function withFields(
   return record;
 }
 
-export function runtime(options?: FakeOptions, extra?: Partial<RunDeps>): { fake: FakeBundle; store: MemoryWorkflowStore; deps: RunDeps } {
+export function runtime(options?: FakeOptions, extra?: Partial<RunDeps>): { fake: FakeBundle; deps: RunDeps } {
   const fake = createFakePorts(options);
-  const store = new MemoryWorkflowStore();
   return {
     fake,
-    store,
     deps: {
       ports: fake.ports,
-      store,
       mode: "live",
       now: () => new Date(FIXED_NOW),
       ...extra,
+      config: { ...defaultConfig(), payrollCalendarId: "cal-weekly", ...extra?.config },
     },
   };
 }

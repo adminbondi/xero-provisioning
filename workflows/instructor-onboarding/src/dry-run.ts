@@ -2,18 +2,17 @@
  * DRY RUN — in-memory fakes only.
  * Does not read credentials and does not call Xero, Slack, Gmail, or Airtable.
  */
+import { defaultConfig } from "./config.ts";
 import { createFakePorts } from "./fakes.ts";
 import { sampleAirtableRecord } from "./fixtures/sample-instructor.ts";
-import { MemoryWorkflowStore } from "./idempotency.ts";
 import { runInstructorOnboarding } from "./run.ts";
 
 const fake = createFakePorts();
-const store = new MemoryWorkflowStore();
 const result = await runInstructorOnboarding(sampleAirtableRecord(), {
   ports: fake.ports,
-  store,
   mode: "live",
   now: () => new Date("2026-10-12T01:00:00.000Z"),
+  config: { ...defaultConfig(), payrollCalendarId: "cal-weekly" },
 });
 
 console.log(
@@ -30,7 +29,6 @@ console.log(
       emailSent: result.email.sent,
       emailTo: result.email.message.to,
       startDate: result.startDate.resolved,
-      customCodeApplied: result.customCodeApplied,
       flags: result.flags,
     },
     null,

@@ -1,8 +1,10 @@
 # Instructor onboarding
 
-Rebuild of Zapier Zap 364623444, steps 1–7, for Balance Moves (Bondi). Jira steps 8–9 are not implemented.
+Rebuild of Zapier Zap 364623444, steps 1–7, for Balance Moves (Bondi). Jira steps 8–9 are not implemented. There is no custom-code step: the published map has none, and the placeholder slot has been removed.
 
-The repo README at the root has the full write-up: what the workflow does, the hosting **proposal**, switchover (do not switch the Zap off without Thiago's explicit go), env vars, and the oddities. This file is the package map.
+Host (decided, not deployed): one Cloudflare Worker. An Airtable automation posts the new row to `POST /intake`. The Worker puts it on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each of the seven steps is its own `step.do`. A daily cron is the safety net for rows that never reached the queue. D1 and KV are not used.
+
+The repo README has the full write-up, including why there is no durable store, the `+61` mobile oddity (behavior unchanged; proposed E.164 is `+614…`), and switchover (do not switch the Zap off without Thiago's explicit go).
 
 ## Run
 
@@ -13,37 +15,72 @@ npm run typecheck
 npm run dry-run
 ```
 
-`npm run dry-run` uses in-memory fakes only. Tests block global `fetch`.
+`npm run dry-run` uses in-memory fakes only. Tests block global `fetch`. Nothing here is deployed.
 
 | Piece | Path |
 | --- | --- |
-| Pipeline | `src/run.ts` |
-| Poll trigger | `src/poll.ts` |
+| Seven workflow steps | `src/run.ts` |
+| Step retry settings | `src/host/step-config.ts` |
+| Worker (fetch, queue, cron, Workflow class) | `src/host/worker.ts` |
+| Intake auth | `src/host/intake.ts` |
+| Queue consumer | `src/host/queue-consumer.ts` |
+| Daily safety net | `src/host/safety-net.ts` |
+| Wrangler config | `wrangler.jsonc` |
+| Airtable automation script | `airtable/on-record-created.js` |
 | Super funds | `src/lookups/super-funds.ts` |
 | Gender | `src/lookups/gender.ts` |
 | Employee / contact mappings | `src/mappings/` |
 | Slack and email | `src/messages/` |
-| Custom-code slot | `src/custom-code.ts` |
 | Fakes | `src/fakes.ts` |
 | HTTP adapters (injected fetch) | `src/host/http.ts` |
-| Hosting proposal (`decided: false`) | `src/host/proposal.ts` |
+| Hosting decision | `src/host/decision.ts` |
 | Tests | `test/` |
 
-Proposed host: Cloudflare Workers. Alternative: Render. Proposed trigger: Airtable poll every 2 minutes. Alternative: webhook. Not decided.
+## Queue and secrets
+
+Do not run these against a live account from this pull request. They are the setup, for later.
+
+```bash
+npx wrangler queues create instructor-onboarding-intake
+npx wrangler queues create instructor-onboarding-intake-dlq
+npx wrangler secret put INGRESS_TOKEN
+npx wrangler secret put AIRTABLE_TOKEN
+npx wrangler secret put XERO_CLIENT_ID
+npx wrangler secret put XERO_CLIENT_SECRET
+npx wrangler secret put XERO_REFRESH_TOKEN
+npx wrangler secret put XERO_TENANT_ID
+npx wrangler secret put SLACK_BOT_TOKEN
+npx wrangler secret put GMAIL_CLIENT_ID
+npx wrangler secret put GMAIL_CLIENT_SECRET
+npx wrangler secret put GMAIL_REFRESH_TOKEN
+npx wrangler secret put XERO_WEEKLY_PAYROLL_CALENDAR_ID
+npx wrangler secret put SAFETY_NET_NOT_BEFORE
+```
+
+`XERO_WEEKLY_PAYROLL_CALENDAR_ID` is the single WEEKLY payroll calendar id. The employee step posts once and does not list calendars. `SAFETY_NET_NOT_BEFORE` is an ISO timestamp. The daily check ignores rows created at or before it. The cron in `wrangler.jsonc` is `0 21 * * *` (21:00 UTC).
+
+Xero auth is an OAuth refresh token, not a Custom Connection. If Xero returns a new refresh token, the step fails instead of dropping it. There is no KV row to store the replacement.
+
+## Airtable automation
+
+In the Instructors table, add an automation: when a record is created, run `airtable/on-record-created.js`. Set three inputs: `recordId` (the triggering record), `workerUrl` (the Worker origin plus `/intake`), and `ingressToken` (the same value as `INGRESS_TOKEN`). Do not paste the token into the script file.
 
 ## Required env vars
 
 | Variable | System | Purpose |
 | --- | --- | --- |
-| `AIRTABLE_TOKEN` | Airtable | Read Instructors in base `appePgXVPIIkgnvBQ`. |
+| `INGRESS_TOKEN` | Worker | Bearer token the Airtable script sends to `POST /intake`. |
+| `AIRTABLE_TOKEN` | Airtable | Safety-net read of Instructors in base `appePgXVPIIkgnvBQ`. |
 | `XERO_CLIENT_ID` | Xero | OAuth client. |
 | `XERO_CLIENT_SECRET` | Xero | OAuth client secret. |
-| `XERO_REFRESH_TOKEN` | Xero | Refresh token. Rotated tokens need `onXeroRefreshToken`. |
+| `XERO_REFRESH_TOKEN` | Xero | Refresh token. A rotated token is refused, not stored. |
 | `XERO_TENANT_ID` | Xero | Balance Moves tenant. |
+| `XERO_WEEKLY_PAYROLL_CALENDAR_ID` | Xero | Weekly payroll calendar. Keeps the employee step to one POST. |
 | `SLACK_BOT_TOKEN` | Slack | Post to `#management` as the bot. |
 | `GMAIL_CLIENT_ID` | Google | Send as `admin@balancemoves.com.au`. |
 | `GMAIL_CLIENT_SECRET` | Google | OAuth client secret. |
 | `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. |
+| `SAFETY_NET_NOT_BEFORE` | Worker | Switchover timestamp. Unset means the daily check lists nothing. |
 
 Optional: `XERO_ORG_SHORTCODE`, `SLACK_CHANNEL_ID`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_CC`, `EMAIL_BCC`, `START_DATE_TIMEZONE`, `AIRTABLE_BASE_ID`, `AIRTABLE_TABLE_ID`, `CONFLUENCE_GUIDE_URL`. Defaults are the Zap's public values.
 
@@ -57,14 +94,13 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `gender-not-stated-empty`
 - `start-date-zapier-expression`
 - `contact-bank-bsb-concat`
-- `contact-mobile-plus61-prefix`
+- `contact-mobile-plus61-prefix` — still `+61` plus the raw mobile (`0412…` becomes `+610412…`). Proposed E.164 drops the trunk 0 (`+614…`). Not applied.
 - `employee-bank-left-empty`
 - `income-type-and-tax-scale-null`
 - `abn-on-contact-not-employee`
 - `tfn-in-slack-and-email`
 - `no-view-or-filter`
 - `attachments-included-but-unused`
-- `possible-missing-code-step` — map has no code step; slot is a no-op after gender lookup
 - `airtable-field-names-unconfirmed`
 - `airtable-inbox-query-sh4iX`
 - `similar-super-fund-names-different-uuids`
@@ -76,8 +112,8 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 ## Design additions
 
 - `contact-number-airtable-record-id`
-- `lookup-before-create`
-- `poll-cursor-required`
-- `idempotency-store-required`
+- `workflow-instance-id`
+- `safety-net-not-before`
+- `no-durable-store`
 - `reject-numeric-airtable-fields`
 - `notifications-not-resent`

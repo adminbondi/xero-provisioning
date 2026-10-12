@@ -51,7 +51,10 @@ test("step 6 escapes names and can take a channel override without code changes"
   const { fake, deps } = runtime();
   const result = await runInstructorOnboarding(sampleAirtableRecord(), {
     ...deps,
-    config: resolveConfig({ SLACK_CHANNEL_ID: "C-TEST-ONLY" }),
+    config: resolveConfig({
+      SLACK_CHANNEL_ID: "C-TEST-ONLY",
+      XERO_WEEKLY_PAYROLL_CALENDAR_ID: "cal-weekly",
+    }),
   });
   assert.equal(result.slack.channel, "C-TEST-ONLY");
   assert.equal(fake.slack[0]?.channel, "C-TEST-ONLY");

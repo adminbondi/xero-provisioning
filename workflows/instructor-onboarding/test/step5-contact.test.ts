@@ -4,13 +4,16 @@ import { test } from "node:test";
 import { parseAirtableRecord } from "../src/airtable/parse-record.ts";
 import { CONTRACTORS_GROUP_NAME } from "../src/config.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
-import { buildContactPayload, contactBankAccount, contactMobile, contactNumberFor } from "../src/mappings/contact.ts";
+import { buildContactPayload, contactBankAccount, contactMobile, contactNumberFor, proposedE164Mobile } from "../src/mappings/contact.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
 import { runtime } from "./helpers.ts";
 
 test("step 5 builds the create/update contact, including concatenated bank details and +61", () => {
   const record = parseAirtableRecord(sampleAirtableRecord());
   assert.equal(contactMobile("0412345678"), "+610412345678");
+  assert.equal(proposedE164Mobile("0412345678"), "+61412345678");
+  assert.equal(proposedE164Mobile("+61412345678"), null);
+  assert.equal(payloadWouldChange(), false);
   assert.equal(contactBankAccount("062000", "12345678"), "06200012345678");
   assert.equal(contactNumberFor(record.recordId), "airtable:recInstructor001");
   const payload = buildContactPayload(record);
@@ -32,15 +35,23 @@ test("step 5 builds the create/update contact, including concatenated bank detai
   assert.deepEqual(payload.ContactGroups, [{ Name: "Contractors" }]);
 });
 
-test("step 5 updates a contact the Zap may already have created under the same name", async () => {
+test("step 5 upserts once by ContactNumber and does not search by name", async () => {
   const { fake, deps } = runtime({
     contacts: [{ contactId: "contact-from-zap", name: "Avery Nguyen", contactNumber: null }],
   });
   const result = await runInstructorOnboarding(sampleAirtableRecord(), deps);
-  assert.equal(fake.contacts.length, 1);
-  assert.equal(result.contact.created, false);
-  assert.equal(result.contact.action, "update");
-  assert.equal(result.contact.contactId, "contact-from-zap");
-  assert.equal(fake.contacts[0]?.contactNumber, "airtable:recInstructor001");
-  assert.equal(fake.contacts[0]?.payload?.ContactGroups[0]?.Name, "Contractors");
+  assert.equal(fake.calls.some((call) => call.method === "findContactsByName"), false);
+  assert.equal(fake.calls.filter((call) => call.method === "upsertContact").length, 1);
+  assert.equal(result.contact.created, true);
+  assert.equal(fake.contacts.length, 2);
+
+  const again = await runInstructorOnboarding(sampleAirtableRecord(), deps);
+  assert.equal(again.contact.created, false);
+  assert.equal(again.contact.action, "update");
+  assert.equal(again.contact.contactId, result.contact.contactId);
+  assert.equal(fake.contacts.length, 2);
 });
+
+function payloadWouldChange(): boolean {
+  return contactMobile("0412345678") === proposedE164Mobile("0412345678");
+}

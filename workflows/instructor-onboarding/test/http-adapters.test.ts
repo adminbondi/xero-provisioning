@@ -7,8 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { createAirtablePort, createLivePorts, type LiveEnv } from "../src/host/http.ts";
-import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID } from "../src/config.ts";
-import { MemoryWorkflowStore } from "../src/idempotency.ts";
+import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, defaultConfig } from "../src/config.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
 
 const env: LiveEnv = {
@@ -106,9 +105,9 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
   const ports = createLivePorts(env, fetchImpl);
   const result = await runInstructorOnboarding(sampleAirtableRecord(), {
     ports,
-    store: new MemoryWorkflowStore(),
     mode: "live",
     now: () => new Date("2026-10-12T13:30:00.000Z"),
+    config: { ...defaultConfig(), payrollCalendarId: "cal-weekly" },
   });
   assert.equal(result.employee.employeeId, "emp-http");
   assert.equal(result.contact.contactId, "con-http");

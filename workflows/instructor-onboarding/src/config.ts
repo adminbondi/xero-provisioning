@@ -5,7 +5,9 @@
 
 export const AIRTABLE_BASE_ID = "appePgXVPIIkgnvBQ";
 export const AIRTABLE_TABLE_ID = "tblageJRycUMiyKGr";
-export const POLL_INTERVAL_MS = 2 * 60 * 1000;
+
+/** Daily safety-net cron. Wrangler crons are UTC: 21:00 UTC is 07:00 AEST / 08:00 AEDT. */
+export const SAFETY_NET_CRON = "0 21 * * *";
 
 export const XERO_ORG_SHORTCODE = "!hGL34";
 export const SLACK_CHANNEL_ID = "C09BK6Y2WHL";
@@ -41,6 +43,8 @@ export interface WorkflowConfig {
   emailBcc: string;
   startDateTimeZone: string;
   confluenceGuideUrl: string;
+  /** Weekly Xero payroll calendar. Set so the employee step is one POST, not a calendar list. */
+  payrollCalendarId?: string;
 }
 
 export function defaultConfig(): WorkflowConfig {
@@ -71,6 +75,7 @@ export function resolveConfig(env: Readonly<Record<string, string | undefined>> 
     emailBcc: env.EMAIL_BCC || env.EMAIL_FROM || base.emailBcc,
     startDateTimeZone: env.START_DATE_TIMEZONE || base.startDateTimeZone,
     confluenceGuideUrl: env.CONFLUENCE_GUIDE_URL || base.confluenceGuideUrl,
+    payrollCalendarId: env.XERO_WEEKLY_PAYROLL_CALENDAR_ID || undefined,
   };
 }
 

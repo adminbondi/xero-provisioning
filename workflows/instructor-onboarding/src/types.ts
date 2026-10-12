@@ -128,9 +128,7 @@ export interface WorkflowSuccess {
     zapierExpression: string;
     timeZone: string;
     resolved: string;
-    overriddenByCustomCode: boolean;
   };
-  customCodeApplied: boolean;
   employee: {
     action: "create" | "reuse";
     employeeId: string | null;

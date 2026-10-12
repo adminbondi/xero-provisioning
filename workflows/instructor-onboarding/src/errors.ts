@@ -56,28 +56,14 @@ export class PayrollCalendarError extends WorkflowError {
   }
 }
 
-export class AmbiguousEmployeeError extends WorkflowError {
-  constructor(email: string, count: number) {
-    super(
-      "xero-employee",
-      `Found ${count} Xero employees with email ${JSON.stringify(email)}. Refusing to guess.`,
-    );
-  }
-}
-
-export class AmbiguousContactError extends WorkflowError {
-  constructor(name: string, count: number) {
-    super(
-      "xero-contact",
-      `Found ${count} Xero contacts named ${JSON.stringify(name)}. Refusing to guess.`,
-    );
-  }
-}
-
-export class CustomCodeError extends WorkflowError {
-  constructor(message: string, cause?: unknown) {
-    super("custom-code", message, { cause });
-  }
+export function isTerminalWorkflowError(error: unknown): boolean {
+  return (
+    error instanceof MissingFieldsError ||
+    error instanceof AirtableFieldTypeError ||
+    error instanceof UnknownSuperFundError ||
+    error instanceof UnknownGenderError ||
+    error instanceof PayrollCalendarError
+  );
 }
 
 export function serializeWorkflowError(error: unknown): {

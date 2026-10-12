@@ -8,7 +8,7 @@ import { parseAirtableRecord } from "../src/airtable/parse-record.ts";
 import { lookupGender } from "../src/lookups/gender.ts";
 import { lookupSuperFund } from "../src/lookups/super-funds.ts";
 import { buildEmployeePayload } from "../src/mappings/employee.ts";
-import { runInstructorOnboarding } from "../src/run.ts";
+import { resolveWeeklyPayrollCalendar, runInstructorOnboarding } from "../src/run.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { runtime } from "./helpers.ts";
 
@@ -59,17 +59,31 @@ test("step 4 resolves the Zap StartDate expression as today in Australia/Sydney"
   assert.equal(resolveStartDate(new Date("2026-10-12T13:30:00.000Z")), "2026-10-13");
 });
 
-test("step 4 uses the single WEEKLY calendar and fails closed otherwise", async () => {
+test("step 4 posts one employee using the configured weekly calendar", async () => {
   const happy = runtime();
   const result = await runInstructorOnboarding(sampleAirtableRecord(), happy.deps);
   assert.equal(result.employee.payload.PayrollCalendarID, "cal-weekly");
   assert.equal(result.employee.payload.StartDate, "2026-10-13");
   assert.equal(result.startDate.zapierExpression, "{{=)}}");
-  assert.equal(result.startDate.overriddenByCustomCode, false);
+  assert.equal(happy.fake.calls.some((call) => call.method === "listPayrollCalendars"), false);
+  assert.equal(happy.fake.calls.filter((call) => call.method === "createEmployee").length, 1);
+
+  const missing = runtime();
+  missing.deps = {
+    ...missing.deps,
+    config: { ...missing.deps.config!, payrollCalendarId: undefined },
+  };
+  await assert.rejects(() => runInstructorOnboarding(sampleAirtableRecord(), missing.deps), PayrollCalendarError);
+  assert.equal(missing.fake.employees.length, 0);
+  assert.equal(missing.fake.calls.some((call) => call.method === "listPayrollCalendars"), false);
+});
+
+test("the weekly calendar lookup is a separate one-shot read, not a workflow step", async () => {
+  const one = runtime();
+  assert.equal(await resolveWeeklyPayrollCalendar(one.fake.ports.employees), "cal-weekly");
 
   const none = runtime({ calendars: [] });
-  await assert.rejects(() => runInstructorOnboarding(sampleAirtableRecord(), none.deps), PayrollCalendarError);
-  assert.equal(none.fake.employees.length, 0);
+  await assert.rejects(() => resolveWeeklyPayrollCalendar(none.fake.ports.employees), PayrollCalendarError);
 
   const many = runtime({
     calendars: [
@@ -77,6 +91,5 @@ test("step 4 uses the single WEEKLY calendar and fails closed otherwise", async 
       { payrollCalendarId: "b", name: "Weekly contractors", calendarType: "WEEKLY" },
     ],
   });
-  await assert.rejects(() => runInstructorOnboarding(sampleAirtableRecord(), many.deps), /Multiple WEEKLY/);
-  assert.equal(many.fake.employees.length, 0);
+  await assert.rejects(() => resolveWeeklyPayrollCalendar(many.fake.ports.employees), /Multiple WEEKLY/);
 });

@@ -39,7 +39,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "contact-mobile-plus61-prefix",
     summary:
-      'Contact mobile is the literal prefix "+61" concatenated with the Airtable mobile, so 0412… becomes +610412…. Employee mobile is the raw Airtable value.',
+      'Contact mobile is the literal prefix "+61" concatenated with the Airtable mobile, so 0412… becomes +610412…. That is not valid E.164. The proposed format drops the trunk 0 (0412… becomes +61412…). Not applied. Employee mobile stays the raw Airtable value.',
   },
   {
     id: "employee-bank-left-empty",
@@ -67,11 +67,6 @@ export const ODDITIES: readonly FlaggedItem[] = [
     id: "attachments-included-but-unused",
     summary:
       "The trigger includes attachment metadata. Steps 2–7 never read it, and file bytes are not downloaded.",
-  },
-  {
-    id: "possible-missing-code-step",
-    summary:
-      "Thiago thinks the Zap had a small custom code step. The read-only map has none. A no-op slot sits after gender lookup and before the Xero writes.",
   },
   {
     id: "airtable-field-names-unconfirmed",
@@ -119,19 +114,19 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
       "Contacts are keyed by ContactNumber airtable:{recordId} (Xero's external id, max 50 characters) so a second run updates instead of inserting.",
   },
   {
-    id: "lookup-before-create",
+    id: "workflow-instance-id",
     summary:
-      "Before creating an employee, reuse one whose email matches case-insensitively. Before creating a contact, update an exact name match when ContactNumber is not set yet (covers contacts the Zap already created).",
+      "The Airtable record id is the Cloudflare Workflow instance id. A second queue delivery does not start a second run, so it does not create a second employee or contact. D1 and KV are not used for this.",
   },
   {
-    id: "poll-cursor-required",
+    id: "safety-net-not-before",
     summary:
-      "A live poll with no createdAfter cursor lists nothing. That stops the first tick from turning every historical Instructors row into an employee.",
+      "The daily safety net lists nothing until SAFETY_NET_NOT_BEFORE is set. That stops the first check from turning every historical Instructors row into an employee.",
   },
   {
-    id: "idempotency-store-required",
+    id: "no-durable-store",
     summary:
-      "The in-memory store is for tests and local dry runs. A live host has to persist run state and the poll cursor across processes.",
+      "Workflows persists each step result and retries only the failed step. The safety-net cutoff is an env var, not a moving cursor. D1 and KV are not part of this Worker.",
   },
   {
     id: "reject-numeric-airtable-fields",
@@ -141,6 +136,6 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "notifications-not-resent",
     summary:
-      "Once Slack and email have succeeded for a record, a later run does not post or send them again.",
+      "Slack and email are their own steps. A finished step is not run again, and a second queue delivery does not start another instance, so those messages are not sent twice.",
   },
 ];

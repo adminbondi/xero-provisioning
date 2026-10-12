@@ -2,10 +2,10 @@ import "./block-network.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AIRTABLE_FIELDS, parseAirtableRecord } from "../src/airtable/parse-record.ts";
-import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, POLL_INTERVAL_MS } from "../src/config.ts";
+import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, SAFETY_NET_CRON } from "../src/config.ts";
 import { AirtableFieldTypeError } from "../src/errors.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
-import { CURSOR_REQUIRED_MESSAGE, runPollTick } from "../src/poll.ts";
+import { SAFETY_NET_NOT_BEFORE_MESSAGE, runSafetyNet } from "../src/host/safety-net.ts";
 import { runtime, withFields } from "./helpers.ts";
 
 test("step 1 parses a new Instructors record and keeps attachment metadata", () => {
@@ -27,10 +27,20 @@ test("step 1 ignores non-attachment arrays and rejects numeric text fields", () 
   assert.throws(() => parseAirtableRecord(withFields({ BSB: 62000 })), AirtableFieldTypeError);
 });
 
-test("step 1 poll is every 2 minutes with attachments and no view or filter", async () => {
-  assert.equal(POLL_INTERVAL_MS, 120_000);
-  const { fake, deps } = runtime({ airtableRecords: [sampleAirtableRecord()] });
-  const tick = await runPollTick({ ...deps, mode: "shadow" });
+test("the daily safety net lists with attachments and no view or filter", async () => {
+  assert.equal(SAFETY_NET_CRON, "0 21 * * *");
+  const record = sampleAirtableRecord();
+  record.createdTime = "2026-10-12T01:00:00.000Z";
+  const { fake } = runtime({ airtableRecords: [record] });
+  const enqueued: string[] = [];
+  const tick = await runSafetyNet({
+    airtable: fake.ports.airtable,
+    notBefore: "2026-10-01T00:00:00.000Z",
+    hasWorkflow: async () => false,
+    enqueue: async (item) => {
+      enqueued.push(item.id);
+    },
+  });
   assert.equal(tick.blocked, false);
   assert.equal(fake.calls.filter((call) => call.method === "listRecords").length, 1);
   const detail = fake.calls[0]?.detail as {
@@ -47,15 +57,22 @@ test("step 1 poll is every 2 minutes with attachments and no view or filter", as
   assert.equal(detail.includeAttachments, true);
   assert.equal(detail.view, null);
   assert.equal(detail.filterByFormula, null);
+  assert.deepEqual(enqueued, ["recInstructor001"]);
   assert.equal(fake.employees.length, 0);
-  assert.equal(tick.results[0]?.status, "processed");
 });
 
-test("live polling refuses to scan history until a cursor is set", async () => {
-  const { fake, deps } = runtime({ airtableRecords: [sampleAirtableRecord()] });
-  const tick = await runPollTick(deps);
+test("the safety net refuses to scan history until the cutoff is set", async () => {
+  const { fake } = runtime({ airtableRecords: [sampleAirtableRecord()] });
+  const tick = await runSafetyNet({
+    airtable: fake.ports.airtable,
+    notBefore: null,
+    hasWorkflow: async () => false,
+    enqueue: async () => {
+      throw new Error("should not enqueue");
+    },
+  });
   assert.equal(tick.blocked, true);
-  assert.equal(tick.reason, CURSOR_REQUIRED_MESSAGE);
+  assert.equal(tick.reason, SAFETY_NET_NOT_BEFORE_MESSAGE);
   assert.equal(fake.calls.length, 0);
   assert.equal(fake.employees.length, 0);
 });

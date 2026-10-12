@@ -11,13 +11,13 @@ import { PIPELINE_STEPS, runInstructorOnboarding } from "../src/run.ts";
 import { runtime } from "./helpers.ts";
 
 test("dry run exercises steps 1-7 against fakes", async () => {
-  const { fake, store, deps } = runtime();
+  const { fake, deps } = runtime();
   const result = await runInstructorOnboarding(sampleAirtableRecord(), deps);
 
   assert.deepEqual(result.steps, [...PIPELINE_STEPS]);
   assert.equal(result.ok, true);
-  assert.equal(result.customCodeApplied, false);
-  assert.ok(result.flags.includes("possible-missing-code-step"));
+  assert.equal(result.flags.includes("possible-missing-code-step"), false);
+  assert.ok(result.flags.includes("contact-mobile-plus61-prefix"));
   assert.ok(result.flags.includes("employee-state-hardcoded-nsw"));
   assert.ok(result.flags.includes("contact-bank-bsb-concat"));
   assert.ok(result.flags.includes("start-date-zapier-expression"));
@@ -46,26 +46,12 @@ test("dry run exercises steps 1-7 against fakes", async () => {
 
   assert.deepEqual(
     fake.calls.map((call) => `${call.port}.${call.method}`),
-    [
-      "employees.listPayrollCalendars",
-      "employees.findEmployeesByEmail",
-      "employees.createEmployee",
-      "contacts.findContactByNumber",
-      "contacts.findContactsByName",
-      "contacts.upsertContact",
-      "slack.postMessage",
-      "email.send",
-    ],
+    ["employees.createEmployee", "contacts.upsertContact", "slack.postMessage", "email.send"],
   );
   assert.equal(fake.employees.length, 1);
   assert.equal(fake.contacts.length, 1);
   assert.equal(fake.slack.length, 1);
   assert.equal(fake.emails.length, 1);
-  const saved = await store.getRun("recInstructor001");
-  assert.equal(saved?.employeeId, "employee-1");
-  assert.equal(saved?.contactId, "contact-1");
-  assert.equal(saved?.slackSent, true);
-  assert.equal(saved?.emailSent, true);
 
   const shadow = runtime();
   const preview = await runInstructorOnboarding(sampleAirtableRecord(), { ...shadow.deps, mode: "shadow" });
@@ -80,5 +66,5 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(shadow.fake.emails.length, 0);
   assert.equal(shadow.fake.calls.some((call) => call.method === "createEmployee"), false);
   assert.equal(shadow.fake.calls.some((call) => call.method === "upsertContact"), false);
-  assert.equal(await shadow.store.getRun("recInstructor001"), null);
+  assert.equal(shadow.fake.calls.length, 0);
 });

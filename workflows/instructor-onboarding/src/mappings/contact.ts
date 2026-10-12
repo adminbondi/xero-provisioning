@@ -11,6 +11,15 @@ export function contactMobile(mobile: string): string {
   return `+61${mobile}`;
 }
 
+/**
+ * Proposed E.164 for an Australian mobile, not used by the contact payload.
+ * 0412345678 would become +61412345678 (the trunk 0 is dropped). Returns null when the value is not 04 plus 8 digits.
+ */
+export function proposedE164Mobile(mobile: string): string | null {
+  if (!/^04\d{8}$/.test(mobile)) return null;
+  return `+61${mobile.slice(1)}`;
+}
+
 /** Zap mapping: BankAccountNumber is BSB concatenated with account. No separator. */
 export function contactBankAccount(bsb: string, account: string): string {
   return `${bsb}${account}`;

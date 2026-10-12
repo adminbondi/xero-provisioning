@@ -1,0 +1,33 @@
+{
+  "name": "instructor-onboarding",
+  "main": "src/host/worker.ts",
+  "compatibility_date": "2026-10-12",
+  "observability": {
+    "enabled": true
+  },
+  "workflows": [
+    {
+      "name": "instructor-onboarding",
+      "binding": "ONBOARDING_WORKFLOW",
+      "class_name": "InstructorOnboardingWorkflow"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "INTAKE_QUEUE",
+        "queue": "instructor-onboarding-intake"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "instructor-onboarding-intake",
+        "max_retries": 5,
+        "dead_letter_queue": "instructor-onboarding-intake-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["0 21 * * *"]
+  }
+}
