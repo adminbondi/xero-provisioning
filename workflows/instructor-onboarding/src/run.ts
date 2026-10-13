@@ -7,7 +7,6 @@ import { lookupGender } from "./lookups/gender.ts";
 import { lookupSuperFund } from "./lookups/super-funds.ts";
 import { buildContactPayload, instructorFullName } from "./mappings/contact.ts";
 import { buildEmployeePayload, buildPayTemplate, employeeIdempotencyKey } from "./mappings/employee.ts";
-import { buildPattyWebhookPayload } from "./mappings/webhook.ts";
 import { buildInstructorEmail } from "./messages/email.ts";
 import { buildSlackMessage, buildXeroHoldMessage, setupCheckLines, type SetupFacts } from "./messages/slack.ts";
 import { ODDITIES } from "./oddities.ts";
@@ -78,7 +77,6 @@ interface EmailStepResult {
 
 type EmployeeReadResult = WorkflowSuccess["employeeRead"];
 type PayTemplateResult = WorkflowSuccess["payTemplate"];
-type WebhookResult = WorkflowSuccess["webhook"];
 
 function configOf(deps: RunDeps): WorkflowConfig {
   return deps.config ?? defaultConfig();
@@ -190,12 +188,6 @@ export async function runOnboardingSteps(
     return result;
   });
 
-  const webhook = await step.do("patty-webhook", STEP_CONFIG["patty-webhook"], async () => {
-    const result = await postPattyWebhook(record, employee.employeeId, contact.contactId, config.orgShortCode, deps, match);
-    logDryRun("patty-webhook", result.payload, record, deps);
-    return result;
-  });
-
   return {
     ok: true,
     mode: deps.mode,
@@ -220,7 +212,6 @@ export async function runOnboardingSteps(
     email,
     employeeRead,
     payTemplate,
-    webhook,
     flags: activeFlags(genderCode),
   };
 }
@@ -384,24 +375,6 @@ async function finalisePayTemplate(
   const template = buildPayTemplate(superMembershipId);
   await deps.ports.employees.updatePayTemplate(employeeId, template);
   return { updated: true, template };
-}
-
-async function postPattyWebhook(
-  record: InstructorRecord,
-  employeeId: string | null,
-  contactId: string | null,
-  orgShortCode: string,
-  deps: RunDeps,
-  match: XeroMatchResult,
-): Promise<WebhookResult> {
-  const payload = buildPattyWebhookPayload({ record, employeeId, contactId, orgShortCode });
-  if (deps.mode === "shadow" || blocked(match)) return { posted: false, payload };
-  if (!configOf(deps).pattyWebhookUrl) {
-    console.log(JSON.stringify({ event: "patty-webhook-skipped", recordId: record.recordId }));
-    return { posted: false, payload };
-  }
-  await deps.ports.webhook.post(payload);
-  return { posted: true, payload };
 }
 
 async function upsertContact(record: InstructorRecord, deps: RunDeps, match: XeroMatchResult): Promise<ContactStepResult> {

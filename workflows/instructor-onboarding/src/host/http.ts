@@ -1,5 +1,4 @@
 import { emailsMatch, namesMatch } from "../match.ts";
-import { signWebhookBody } from "./webhook-sign.ts";
 import { isCreatedTimeFilter } from "./airtable-poll.ts";
 import { redactSensitiveError } from "../sensitive.ts";
 import { createOauthSession, sharedOauthAccessToken, type OauthSession, type RefreshTokenStore } from "./xero-refresh.ts";
@@ -13,14 +12,12 @@ import type {
   Ports,
   SlackPort,
   SuperMembershipRef,
-  WebhookPort,
   XeroContactPort,
   XeroEmployeePort,
 } from "../ports.ts";
 import type {
   AirtableApiRecord,
   OutboundEmail,
-  PattyWebhookPayload,
   SlackMessage,
   XeroContactPayload,
   XeroEmployeePayload,
@@ -465,34 +462,6 @@ export function createXeroContactPort(options: {
   };
 }
 
-export function createPattyWebhookPort(options: {
-  fetch: typeof fetch;
-  url: string;
-  signingSecret: string;
-}): WebhookPort {
-  const fetchImpl = bindFetch(options.fetch);
-  return {
-    async post(payload: PattyWebhookPayload) {
-      if (!options.url) throw new Error("PATTY_WEBHOOK_URL is not set.");
-      if (!options.signingSecret) throw new Error("PATTY_WEBHOOK_SIGNING_SECRET is not set.");
-      const body = JSON.stringify(payload);
-      const signature = await signWebhookBody(options.signingSecret, body);
-      const response = await fetchImpl(options.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Balance-Moves-Signature": signature,
-        },
-        body,
-      });
-      if (!response.ok) {
-        throw new Error(`Patty webhook HTTP ${response.status}.`);
-      }
-      return { delivered: true };
-    },
-  };
-}
-
 export function createSlackPort(options: {
   fetch: typeof fetch;
   token: string;
@@ -645,10 +614,5 @@ export function createLivePorts(
     }),
     slack: createSlackPort({ fetch: boundFetch, token: live.SLACK_BOT_TOKEN, once: hooks.slackOnce }),
     email: createGmailPort({ fetch: boundFetch, getAccessToken: getGmailToken }),
-    webhook: createPattyWebhookPort({
-      fetch: boundFetch,
-      url: env.PATTY_WEBHOOK_URL ?? "",
-      signingSecret: env.PATTY_WEBHOOK_SIGNING_SECRET ?? "",
-    }),
   };
 }

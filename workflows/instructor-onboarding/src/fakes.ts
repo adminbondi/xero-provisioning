@@ -11,14 +11,12 @@ import type {
   Ports,
   SlackPort,
   SuperMembershipRef,
-  WebhookPort,
   XeroContactPort,
   XeroEmployeePort,
 } from "./ports.ts";
 import type {
   AirtableApiRecord,
   OutboundEmail,
-  PattyWebhookPayload,
   SlackMessage,
   XeroContactPayload,
   XeroEmployeePayload,
@@ -84,7 +82,6 @@ export interface FakeBundle {
   contacts: FakeContact[];
   slack: SlackMessage[];
   emails: OutboundEmail[];
-  webhooks: PattyWebhookPayload[];
   calls: FakeCall[];
   airtableRecords: AirtableApiRecord[];
 }
@@ -118,7 +115,6 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
   }));
   const slack: SlackMessage[] = [];
   const emails: OutboundEmail[] = [];
-  const webhooks: PattyWebhookPayload[] = [];
   const readback = options.readback;
   const airtableRecords = options.airtableRecords ?? [];
   const calendars = options.calendars ?? [DEFAULT_CALENDAR];
@@ -329,14 +325,6 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
     },
   };
 
-  const webhookPort: WebhookPort = {
-    async post(payload: PattyWebhookPayload) {
-      calls.push({ port: "webhook", method: "post", detail: payload });
-      webhooks.push(structuredClone(payload));
-      return { delivered: true };
-    },
-  };
-
   const emailPort: EmailPort = {
     async send(message: OutboundEmail) {
       calls.push({ port: "email", method: "send", detail: { to: message.to, subject: message.subject } });
@@ -356,13 +344,11 @@ export function createFakePorts(options: FakeOptions = {}): FakeBundle {
       contacts: contactPort,
       slack: slackPort,
       email: emailPort,
-      webhook: webhookPort,
     },
     employees,
     contacts,
     slack,
     emails,
-    webhooks,
     calls,
     airtableRecords,
   };

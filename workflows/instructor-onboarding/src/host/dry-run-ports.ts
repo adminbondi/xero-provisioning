@@ -25,6 +25,5 @@ export function dryRunPorts(): Ports {
     },
     slack: { postMessage: () => blocked("slack.postMessage") },
     email: { send: () => blocked("email.send") },
-    webhook: { post: () => blocked("webhook.post") },
   };
 }

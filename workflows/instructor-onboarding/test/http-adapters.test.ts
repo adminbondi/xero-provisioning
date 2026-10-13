@@ -7,12 +7,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { createAirtablePort, createLivePorts, type LiveEnv } from "../src/host/http.ts";
-import { signWebhookBody } from "../src/host/webhook-sign.ts";
 import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, defaultConfig } from "../src/config.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
-
-const WEBHOOK_URL = "https://patty-webhook.invalid/onboarding";
-const WEBHOOK_SECRET = "test-webhook-secret";
 
 const env: LiveEnv = {
   AIRTABLE_TOKEN: "test-airtable-token",
@@ -217,36 +213,15 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       assert.match(raw, /Subject: Instructor Onboarding: Please Confirm Your Details/);
       return Response.json({ id: "gmail-msg-1" });
     }
-    if (url === WEBHOOK_URL) {
-      assert.equal(init?.method, "POST");
-      const signature = new Headers(init?.headers).get("x-balance-moves-signature");
-      assert.equal(signature, await signWebhookBody(WEBHOOK_SECRET, body ?? ""));
-      const parsed = JSON.parse(body ?? "{}") as {
-        xeroEmployeeId: string;
-        xeroContactId: string;
-        emergencyContactName: string;
-        emergencyContactMobile: string;
-        airtableRecordId: string;
-      };
-      assert.equal(parsed.xeroEmployeeId, "emp-http");
-      assert.equal(parsed.xeroContactId, "con-http");
-      assert.equal(parsed.emergencyContactName, "Sam Nguyen");
-      assert.equal(parsed.emergencyContactMobile, "0499888777");
-      assert.equal(parsed.airtableRecordId, "recInstructor001");
-      return Response.json({ ok: true });
-    }
     throw new Error(`unexpected url ${url}`);
   };
 
-  const ports = createLivePorts(
-    { ...env, PATTY_WEBHOOK_URL: WEBHOOK_URL, PATTY_WEBHOOK_SIGNING_SECRET: WEBHOOK_SECRET },
-    fetchImpl,
-  );
+  const ports = createLivePorts(env, fetchImpl);
   const result = await runInstructorOnboarding(sampleAirtableRecord(), {
     ports,
     mode: "live",
     now: () => new Date("2026-10-12T13:30:00.000Z"),
-    config: { ...defaultConfig(), payrollCalendarId: "cal-weekly", pattyWebhookUrl: WEBHOOK_URL },
+    config: { ...defaultConfig(), payrollCalendarId: "cal-weekly" },
     instanceId: "recInstructor001-retry-1",
   });
   assert.equal(result.employee.employeeId, "emp-http");

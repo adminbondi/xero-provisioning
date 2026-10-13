@@ -101,9 +101,6 @@ test("unset Gender and IncomeType are flagged and an 11-digit ABN is required", 
   assert.equal(result.employeeRead.genderUnset, true);
   assert.equal(result.employeeRead.incomeTypeUnset, true);
   assert.equal(result.payTemplate.updated, true);
-  assert.equal(result.webhook.posted, true);
-  assert.equal(result.webhook.payload.emergencyContactName, "Sam Nguyen");
-  assert.equal(result.webhook.payload.emergencyContactMobile, "0499888777");
   assert.equal(JSON.stringify(result.employee.payload).includes("Sam Nguyen"), false);
   assert.equal(JSON.stringify(result.contact.payload).includes("Sam Nguyen"), false);
 
@@ -130,15 +127,11 @@ test("unset Gender and IncomeType are flagged and an 11-digit ABN is required", 
   assert.equal(rejected.fake.calls.some((call) => call.method === "getEmployee"), false);
 });
 
-test("dry run logs the full SGC template and does not post the webhook", async () => {
+test("dry run logs the full SGC template and does not call Xero", async () => {
   const { fake, deps } = runtime();
   const preview = await runInstructorOnboarding(sampleAirtableRecord(), { ...deps, mode: "shadow" });
   const template = buildPayTemplate(null);
   assert.deepEqual(preview.payTemplate.template, template);
   assert.equal(preview.payTemplate.updated, false);
-  assert.equal(preview.webhook.posted, false);
-  assert.equal(preview.webhook.payload.xeroEmployeeId, null);
-  assert.equal(preview.webhook.payload.emergencyContactName, "Sam Nguyen");
-  assert.equal(fake.webhooks.length, 0);
   assert.equal(fake.calls.length, 0);
 });

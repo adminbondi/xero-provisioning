@@ -55,8 +55,6 @@ export interface WorkflowConfig {
   confluenceGuideUrl: string;
   /** Weekly Xero payroll calendar. Set so the employee step is one POST, not a calendar list. */
   payrollCalendarId?: string;
-  /** From `PATTY_WEBHOOK_URL`. Unset means the live webhook step is skipped. */
-  pattyWebhookUrl?: string;
 }
 
 export function defaultConfig(): WorkflowConfig {
@@ -106,7 +104,6 @@ export function resolveConfig(env: Readonly<Record<string, string | undefined>> 
     startDateTimeZone: env.START_DATE_TIMEZONE || base.startDateTimeZone,
     confluenceGuideUrl: env.CONFLUENCE_GUIDE_URL || base.confluenceGuideUrl,
     payrollCalendarId: env.XERO_WEEKLY_PAYROLL_CALENDAR_ID || undefined,
-    pattyWebhookUrl: env.PATTY_WEBHOOK_URL?.trim() || undefined,
   };
 }
 

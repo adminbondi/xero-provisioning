@@ -1,7 +1,6 @@
 import type {
   AirtableApiRecord,
   OutboundEmail,
-  PattyWebhookPayload,
   SlackMessage,
   XeroContactPayload,
   XeroEmployeePayload,
@@ -112,15 +111,10 @@ export interface EmailPort {
   send(message: OutboundEmail): Promise<{ messageId: string }>;
 }
 
-export interface WebhookPort {
-  post(payload: PattyWebhookPayload): Promise<{ delivered: boolean }>;
-}
-
 export interface Ports {
   airtable: AirtablePort;
   employees: XeroEmployeePort;
   contacts: XeroContactPort;
   slack: SlackPort;
   email: EmailPort;
-  webhook: WebhookPort;
 }

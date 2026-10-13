@@ -9,7 +9,6 @@ export const PIPELINE_STEPS = [
   "xero-contact",
   "slack",
   "email",
-  "patty-webhook",
 ] as const;
 
 export type PipelineStepName = (typeof PIPELINE_STEPS)[number];
@@ -68,10 +67,6 @@ export const STEP_CONFIG: Record<PipelineStepName, StepConfig> = {
     timeout: "1 minute",
   },
   email: {
-    retries: { limit: 5, delay: "15 seconds", backoff: "exponential" },
-    timeout: "1 minute",
-  },
-  "patty-webhook": {
     retries: { limit: 5, delay: "15 seconds", backoff: "exponential" },
     timeout: "1 minute",
   },

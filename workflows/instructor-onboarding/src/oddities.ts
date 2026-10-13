@@ -158,7 +158,7 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "emergency-contact-webhook-only",
     summary:
-      "Emergency contact cannot be set through the Payroll AU or Accounting API. The end check always reports it MISSING. It is only on the Patty webhook payload.",
+      "Emergency contact cannot be set through the Payroll AU or Accounting API. The Patty webhook step is removed. The end check always reports it MISSING.",
   },
   {
     id: "xero-email-skip-name-hold",

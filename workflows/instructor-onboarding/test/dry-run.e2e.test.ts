@@ -41,8 +41,6 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(result.payTemplate.template.EarningsLines.length, 0);
   assert.equal(result.payTemplate.template.LeaveLines.length, 0);
   assert.equal(result.payTemplate.template.SuperLines.length, 1);
-  assert.equal(result.webhook.posted, true);
-  assert.equal(result.webhook.payload.emergencyContactName, "Sam Nguyen");
   assert.equal(result.employee.payload.BankAccounts.length, 0);
   assert.equal(result.contact.created, true);
   assert.equal(result.contact.payload.Addresses[0]?.Region, "VIC");
@@ -77,7 +75,6 @@ test("dry run exercises steps 1-7 against fakes", async () => {
       "contacts.getContact",
       "slack.postMessage",
       "email.send",
-      "webhook.post",
     ],
   );
   assert.equal(fake.employees.length, 1);
@@ -98,12 +95,9 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(shadow.fake.emails.length, 0);
   assert.equal(preview.payTemplate.updated, false);
   assert.equal(preview.payTemplate.template.SuperLines[0]?.SuperMembershipID, null);
-  assert.equal(preview.webhook.posted, false);
   assert.equal(shadow.fake.calls.some((call) => call.method === "createEmployee"), false);
   assert.equal(shadow.fake.calls.some((call) => call.method === "getEmployee"), false);
   assert.equal(shadow.fake.calls.some((call) => call.method === "updatePayTemplate"), false);
   assert.equal(shadow.fake.calls.some((call) => call.method === "upsertContact"), false);
-  assert.equal(shadow.fake.calls.some((call) => call.method === "post"), false);
-  assert.equal(shadow.fake.webhooks.length, 0);
   assert.equal(shadow.fake.calls.length, 0);
 });

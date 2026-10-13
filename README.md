@@ -37,11 +37,11 @@ Package: [`workflows/instructor-onboarding`](workflows/instructor-onboarding).
 
 ### How it runs
 
-Cloudflare Workflows runs the Zap's seven steps, then an employee read, a pay-template finalise, and a Patty webhook. Each is one `step.do` with its own retry settings, so a failure retries only that step. Local steps (parse, super fund, gender) do not retry. Xero, Slack, email, and the webhook retry with their own delay and timeout.
+Cloudflare Workflows runs the Zap's seven steps, then an employee read and a pay-template finalise. The Patty webhook step is removed. Each remaining step is one `step.do` with its own retry settings, so a failure retries only that step. Local steps (parse, super fund, gender) do not retry. Xero, Slack, and email retry with their own delay and timeout.
 
 Each step stays short. The employee step is one create, using `XERO_WEEKLY_PAYROLL_CALENDAR_ID` so it does not list calendars or page employees. The contact step is one upsert, keyed by `ContactNumber`. Slack is one post. Email is one send. A cold OAuth token refresh can happen immediately before the Xero or Gmail call. That refresh is not a separate step.
 
-`runInstructorOnboarding(airtableRecord, deps)` is that pipeline, used by tests and `npm run dry-run` with fakes. `deps.mode` is `live` or `shadow`. Shadow builds every payload and does **not** create employees, update contacts, post to Slack, send email, or POST the Patty webhook.
+`runInstructorOnboarding(airtableRecord, deps)` is that pipeline, used by tests and `npm run dry-run` with fakes. `deps.mode` is `live` or `shadow`. Shadow builds every payload and does **not** create employees, update contacts, post to Slack, or send email.
 
 ```bash
 cd workflows/instructor-onboarding
@@ -59,7 +59,7 @@ npm run dry-run
 
 1. Once an hour (`0 * * * *`, UTC) the Worker lists Instructors rows created after its watermark and sends each new row to the queue `instructor-onboarding-intake`. Airtable's free plan cannot run scripts, so there is no record-created automation.
 2. The queue consumer starts one Workflow instance. The instance id is the Airtable record id. A second delivery does not start a second run (`workflow-instance-id`) when that instance is still running or already finished. An errored or terminated instance starts `{record id}-retry-1` instead. The consumer acks a duplicate. Other start failures retry, then land on `instructor-onboarding-intake-dlq` (`max_retries` 5).
-3. The Workflow runs the seven Zap steps, then an employee read, a pay-template finalise, and a Patty webhook.
+3. The Workflow runs the seven Zap steps, then an employee read and a pay-template finalise. The Patty webhook step is removed.
 4. `POST /intake` still accepts a manual row. It is not the trigger.
 
 KV stores that created-time watermark and the Xero refresh token (`xero-refresh-token`). D1 is not used. Neither value is the Xero duplicate lock.
@@ -195,7 +195,7 @@ Safety around the Zap, not silent mapping fixes.
 | `ivan-sgc-fixed-amount` | One SGC line, `FIXEDAMOUNT`, expense `478`, liability `826`, no Amount and no 12%. A blank Fixed Amount is intentional and is not a failed check. The contact omits a default purchase account. Weekly 12% super stays on the existing payslip fix. |
 | `pay-template-full-replace` | `updateEmployee` does not document merge versus replace. The step sends the full desired template. |
 | `accounts-payable-tax-input` | No GST flag on Payroll AU. `AccountsPayableTaxType` is `INPUT` for both YES and NO until Thiago confirms. The unconfirmed NO value is BAS Excluded (`BASEXCLUDED`). |
-| `emergency-contact-webhook-only` | Payroll AU has no emergency-contact field. The end check always reports it MISSING. It is only on the Patty webhook payload. |
+| `emergency-contact-webhook-only` | Payroll AU has no emergency-contact field. The Patty webhook step is removed. The end check always reports it MISSING. |
 | `xero-email-skip-name-hold` | Email match skips the create and is logged. Name-only match is held for a person to check and is not created. |
 
 ### Open decisions

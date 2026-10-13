@@ -30,7 +30,6 @@ export function runtime(options?: FakeOptions, extra?: Partial<RunDeps>): { fake
       config: {
         ...defaultConfig(),
         payrollCalendarId: "cal-weekly",
-        pattyWebhookUrl: "https://patty-webhook.invalid/onboarding",
         ...extra?.config,
       },
     },

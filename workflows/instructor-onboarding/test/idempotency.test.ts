@@ -77,7 +77,6 @@ test("an email already in Xero skips the create and does not look up by name", a
     assert.equal(result.payTemplate.updated, false);
     assert.equal(result.slack.sent, false);
     assert.equal(result.email.sent, false);
-    assert.equal(result.webhook.posted, false);
     assert.equal(fake.calls.some((call) => call.method === "findEmployeesByEmail"), true);
     assert.equal(fake.calls.some((call) => call.method === "findEmployeesByName"), false);
     assert.equal(fake.calls.some((call) => call.method === "findContactsByName"), false);
