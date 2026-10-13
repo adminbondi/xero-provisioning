@@ -70,8 +70,10 @@ test("step 4 posts one employee using the configured weekly calendar", async () 
   assert.equal(result.employee.payload.PayrollCalendarID, "cal-weekly");
   assert.equal(result.employee.payload.StartDate, "2026-10-13");
   assert.equal(result.startDate.zapierExpression, "{{=)}}");
-  assert.equal(happy.fake.calls.some((call) => call.method === "listPayrollCalendars"), false);
-  assert.equal(happy.fake.calls.filter((call) => call.method === "createEmployee").length, 1);
+  const methods = happy.fake.calls.map((call) => call.method);
+  assert.equal(methods.filter((method) => method === "createEmployee").length, 1);
+  assert.equal(methods.filter((method) => method === "listPayrollCalendars").length, 1);
+  assert.equal(methods.indexOf("createEmployee") < methods.indexOf("listPayrollCalendars"), true);
 
   const missing = runtime();
   missing.deps = {

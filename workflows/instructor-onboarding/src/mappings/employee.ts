@@ -61,7 +61,8 @@ export function buildEmployeePayload(input: {
 /**
  * Ivan Iglesias's pay template is the standard.
  * Weekly super at 12% is applied per payslip by the existing payroll fix.
- * This line does not carry that percentage, an amount, or a minimum monthly earnings figure.
+ * Fixed Amount is left blank on purpose. The end check does not treat that blank as missing.
+ * Ivan's contact also has no default purchase account, so the contact omits PurchasesDefaultAccountCode.
  *
  * Payroll AU `updateEmployee` only says it updates properties on one employee.
  * It does not say whether PayTemplate merges or replaces. The published example sends

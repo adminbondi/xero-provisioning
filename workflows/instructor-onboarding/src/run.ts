@@ -7,9 +7,8 @@ import { lookupGender } from "./lookups/gender.ts";
 import { lookupSuperFund } from "./lookups/super-funds.ts";
 import { buildContactPayload, instructorFullName } from "./mappings/contact.ts";
 import { buildEmployeePayload, buildPayTemplate, employeeIdempotencyKey } from "./mappings/employee.ts";
-import { buildPattyWebhookPayload } from "./mappings/webhook.ts";
 import { buildInstructorEmail } from "./messages/email.ts";
-import { buildSlackMessage, buildXeroHoldMessage } from "./messages/slack.ts";
+import { buildSlackMessage, buildXeroHoldMessage, setupCheckLines, type SetupFacts } from "./messages/slack.ts";
 import { ODDITIES } from "./oddities.ts";
 import { maskSecretsDeep, maskText, payrollFieldPresence, payrollReplacements } from "./sensitive.ts";
 import type { EmployeeDetails, Ports, XeroEmployeePort } from "./ports.ts";
@@ -78,7 +77,6 @@ interface EmailStepResult {
 
 type EmployeeReadResult = WorkflowSuccess["employeeRead"];
 type PayTemplateResult = WorkflowSuccess["payTemplate"];
-type WebhookResult = WorkflowSuccess["webhook"];
 
 function configOf(deps: RunDeps): WorkflowConfig {
   return deps.config ?? defaultConfig();
@@ -190,12 +188,6 @@ export async function runOnboardingSteps(
     return result;
   });
 
-  const webhook = await step.do("patty-webhook", STEP_CONFIG["patty-webhook"], async () => {
-    const result = await postPattyWebhook(record, employee.employeeId, contact.contactId, config.orgShortCode, deps, match);
-    logDryRun("patty-webhook", result.payload, record, deps);
-    return result;
-  });
-
   return {
     ok: true,
     mode: deps.mode,
@@ -220,7 +212,6 @@ export async function runOnboardingSteps(
     email,
     employeeRead,
     payTemplate,
-    webhook,
     flags: activeFlags(genderCode),
   };
 }
@@ -386,20 +377,6 @@ async function finalisePayTemplate(
   return { updated: true, template };
 }
 
-async function postPattyWebhook(
-  record: InstructorRecord,
-  employeeId: string | null,
-  contactId: string | null,
-  orgShortCode: string,
-  deps: RunDeps,
-  match: XeroMatchResult,
-): Promise<WebhookResult> {
-  const payload = buildPattyWebhookPayload({ record, employeeId, contactId, orgShortCode });
-  if (deps.mode === "shadow" || blocked(match)) return { posted: false, payload };
-  await deps.ports.webhook.post(payload);
-  return { posted: true, payload };
-}
-
 async function upsertContact(record: InstructorRecord, deps: RunDeps, match: XeroMatchResult): Promise<ContactStepResult> {
   const payload = buildContactPayload(record);
   if (blocked(match)) {
@@ -463,17 +440,91 @@ async function postSlack(
   if (match.disposition === "skip-email") {
     return { channel: config.slackChannelId, text: "", sent: false };
   }
+  const facts = await setupFacts(record, employeeId, contactId, config, deps);
   const message = buildSlackMessage({
-    record,
+    name: instructorFullName(record),
     employeeId: employeeId ?? "{EmployeeID}",
     contactId: contactId ?? "{ContactID}",
-    config,
+    recordId: record.recordId,
+    orgShortCode: config.orgShortCode,
+    channel: config.slackChannelId,
+    checks: setupCheckLines(facts),
   });
+  const missing = setupCheckLines(facts)
+    .filter((check) => !check.ok)
+    .map((check) => check.label);
+  console.log(JSON.stringify({ event: "xero-setup-check", recordId: record.recordId, missing }));
   if (deps.mode === "shadow") {
     return { channel: message.channel, text: maskText(message.text, payrollReplacements(record)), sent: false };
   }
   await deps.ports.slack.postMessage(message);
   return { ...message, sent: true };
+}
+
+async function setupFacts(
+  record: InstructorRecord,
+  employeeId: string | null,
+  contactId: string | null,
+  config: WorkflowConfig,
+  deps: RunDeps,
+): Promise<SetupFacts> {
+  const expectedSuperFundId = lookupSuperFund(record.superFund);
+  const payload = buildEmployeePayload({
+    record,
+    genderCode: lookupGender(record.gender),
+    superFundId: expectedSuperFundId,
+    payrollCalendarId: config.payrollCalendarId ?? "",
+    startDate: "",
+  });
+  const contactPayload = buildContactPayload(record);
+  const intended: SetupFacts = {
+    superFundId: expectedSuperFundId,
+    expectedSuperFundId,
+    contributionType: "SGC",
+    calculationType: "FIXEDAMOUNT",
+    expenseAccountCode: "478",
+    liabilityAccountCode: "826",
+    fixedAmountBlank: true,
+    memberNumberPresent: record.memberNumber.trim().length > 0,
+    abnPresent: record.abn.trim().length > 0,
+    employmentType: payload.EmploymentType,
+    incomeType: payload.IncomeType,
+    genderPresent: payload.Gender.trim().length > 0,
+    weeklyCalendar: Boolean(config.payrollCalendarId?.trim()),
+    residencyStatus: payload.TaxDeclaration.ResidencyStatus,
+    tfnPresent: record.tfn.trim().length > 0,
+    mobile: contactPayload.Phones[0].PhoneNumber,
+    purchaseAccountCode: null,
+    bankDetailsPresent: contactPayload.BankAccountDetails.trim().length > 0,
+    gstOnExpenses: contactPayload.AccountsPayableTaxType === "INPUT",
+  };
+  if (deps.mode === "shadow" || !employeeId || !contactId) return intended;
+  const details = await deps.ports.employees.getEmployee(employeeId);
+  const calendars = await deps.ports.employees.listPayrollCalendars();
+  const calendar = calendars.find((item) => item.payrollCalendarId === details.payrollCalendarId);
+  const membership = details.superMemberships.find((item) => item.superFundId === expectedSuperFundId);
+  const contact = await deps.ports.contacts.getContact(contactId);
+  return {
+    superFundId: membership?.superFundId ?? null,
+    expectedSuperFundId,
+    contributionType: details.superLine?.contributionType ?? null,
+    calculationType: details.superLine?.calculationType ?? null,
+    expenseAccountCode: details.superLine?.expenseAccountCode ?? null,
+    liabilityAccountCode: details.superLine?.liabilityAccountCode ?? null,
+    fixedAmountBlank: details.superLine?.amountBlank ?? true,
+    memberNumberPresent: Boolean(membership && membership.employeeNumber.trim().length > 0),
+    abnPresent: details.abnPresent,
+    employmentType: details.employmentType,
+    incomeType: details.incomeType,
+    genderPresent: Boolean(details.gender && details.gender.trim().length > 0),
+    weeklyCalendar: calendar?.calendarType === "WEEKLY",
+    residencyStatus: details.residencyStatus,
+    tfnPresent: details.tfnPresent,
+    mobile: contact.mobile,
+    purchaseAccountCode: contact.purchasesDefaultAccountCode,
+    bankDetailsPresent: contact.bankDetailsPresent,
+    gstOnExpenses: contact.accountsPayableTaxType === "INPUT",
+  };
 }
 
 async function sendEmail(

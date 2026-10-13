@@ -37,11 +37,11 @@ Package: [`workflows/instructor-onboarding`](workflows/instructor-onboarding).
 
 ### How it runs
 
-Cloudflare Workflows runs the Zap's seven steps, then an employee read, a pay-template finalise, and a Patty webhook. Each is one `step.do` with its own retry settings, so a failure retries only that step. Local steps (parse, super fund, gender) do not retry. Xero, Slack, email, and the webhook retry with their own delay and timeout.
+Cloudflare Workflows runs the Zap's seven steps, then an employee read and a pay-template finalise. The Patty webhook step is removed. Each remaining step is one `step.do` with its own retry settings, so a failure retries only that step. Local steps (parse, super fund, gender) do not retry. Xero, Slack, and email retry with their own delay and timeout.
 
 Each step stays short. The employee step is one create, using `XERO_WEEKLY_PAYROLL_CALENDAR_ID` so it does not list calendars or page employees. The contact step is one upsert, keyed by `ContactNumber`. Slack is one post. Email is one send. A cold OAuth token refresh can happen immediately before the Xero or Gmail call. That refresh is not a separate step.
 
-`runInstructorOnboarding(airtableRecord, deps)` is that pipeline, used by tests and `npm run dry-run` with fakes. `deps.mode` is `live` or `shadow`. Shadow builds every payload and does **not** create employees, update contacts, post to Slack, send email, or POST the Patty webhook.
+`runInstructorOnboarding(airtableRecord, deps)` is that pipeline, used by tests and `npm run dry-run` with fakes. `deps.mode` is `live` or `shadow`. Shadow builds every payload and does **not** create employees, update contacts, post to Slack, or send email.
 
 ```bash
 cd workflows/instructor-onboarding
@@ -59,7 +59,7 @@ npm run dry-run
 
 1. Once an hour (`0 * * * *`, UTC) the Worker lists Instructors rows created after its watermark and sends each new row to the queue `instructor-onboarding-intake`. Airtable's free plan cannot run scripts, so there is no record-created automation.
 2. The queue consumer starts one Workflow instance. The instance id is the Airtable record id. A second delivery does not start a second run (`workflow-instance-id`) when that instance is still running or already finished. An errored or terminated instance starts `{record id}-retry-1` instead. The consumer acks a duplicate. Other start failures retry, then land on `instructor-onboarding-intake-dlq` (`max_retries` 5).
-3. The Workflow runs the seven Zap steps, then an employee read, a pay-template finalise, and a Patty webhook.
+3. The Workflow runs the seven Zap steps, then an employee read and a pay-template finalise. The Patty webhook step is removed.
 4. `POST /intake` still accepts a manual row. It is not the trigger.
 
 KV stores that created-time watermark and the Xero refresh token (`xero-refresh-token`). D1 is not used. Neither value is the Xero duplicate lock.
@@ -163,19 +163,19 @@ These match the Zap map. The code does not "correct" them.
 | `gender-not-stated-empty` | Not Stated is an empty string, not Xero's `N`. The API may reject it. |
 | `start-date-zapier-expression` | StartDate is the Zapier expression `{{=)}}`, which the map calls "today" and says to verify. Resolved as the current date in `Australia/Sydney`. That timezone is an assumption. |
 | `contact-bank-bsb-concat` | Contact `BankAccountDetails` is BSB and account concatenated with no separator. |
-| `contact-mobile-plus61-prefix` | Contact mobile is `+61` plus the raw mobile, so `0412…` becomes `+610412…`. Proposed E.164 drops the trunk 0, so `0412345678` would be `+61412345678`. Not applied. Employee mobile is unchanged. |
+| `contact-mobile-plus61-prefix` | Contact mobile drops a leading 0 and is `+61 ` plus the rest, so `0400 000 000` becomes `+61 400 000 000`. Compact E.164 (`0412345678` → `+61412345678`) is not applied. Employee mobile is unchanged. |
 | `employee-bank-left-empty` | Employee BSB, account, middle name, phone, and job title are empty. |
 | `tax-scale-type-null` | IncomeType is NONEMPLOYEE. TaxScaleType stays null. |
-| `tfn-in-slack-and-email` | The TFN is in the #management message and in the instructor email. |
+| `tfn-in-slack-and-email` | The Slack checklist reports TFN as PASS or MISSING and does not include the number. The instructor email still includes the TFN. |
 | `no-view-or-filter` | The Zap had no view and no filter, so every new row was eligible. The poll still sets no view. It filters only by created time. |
 | `attachments-included-but-unused` | Attachment metadata is kept. Bytes are not downloaded. Steps 2–7 do not read them. |
 | `airtable-field-names-unconfirmed` | Column names are the map's labels, not confirmed field ids. |
 | `airtable-inbox-query-sh4iX` | Inbox link query key is `sh4iX`, as written. Confirm the live URL. |
 | `similar-super-fund-names-different-uuids` | Cbus and Media Super Accumulation keep different UUIDs. |
-| `message-text-reconstructed-from-summary` | Slack wording is still reconstructed from the summary. The instructor email body is the verbatim step 7 HTML. The Gmail signature HTML was not in that export. |
+| `message-text-reconstructed-from-summary` | The completion Slack message is the onboarding checklist. Sensitive values are PASS or MISSING. The instructor email body is the verbatim step 7 HTML. The Gmail signature HTML was not in that export. |
 | `country-literal-australia` | Country is the literal `Australia`. |
 | `employee-not-updated-on-rerun` | The create step does not patch name, tax, or address. The pay-template step sends the full desired template so a retry replaces it. Contacts are updated by `ContactNumber`. |
-| `slack-bank-line-is-account-number` | The checklist's bank line is the account number. The map has no bank name. |
+| `slack-bank-line-is-account-number` | The checklist reports bank details as PASS or MISSING and does not print the account number. The map has no bank name. |
 
 Airtable labels used: First Name, Last Name, DOB, Email, Gender, Mobile, Super Fund, Superannuation Member Number, TFN, Residential Address, City/Suburb, State, Postal Code, ABN, BSB, Account. DOB must already be `YYYY-MM-DD`. Values are not trimmed.
 
@@ -192,20 +192,20 @@ Safety around the Zap, not silent mapping fixes.
 | `reject-numeric-airtable-fields` | Text columns such as BSB still reject numbers. TFN, ABN, member number, and Bank Account Number are live number columns and are read as integer text. |
 | `notifications-not-resent` | A finished Slack or email step is not run again, and a duplicate queue message does not start another instance. |
 | `abn-on-tax-declaration` | `TaxDeclaration.ABN` is the 11-digit Airtable ABN. The contact `TaxNumber` is the same ABN. |
-| `ivan-sgc-fixed-amount` | One SGC line, `FIXEDAMOUNT`, expense `478`, liability `826`, no minimum and no 12%. Weekly 12% super stays on the existing payslip fix. |
+| `ivan-sgc-fixed-amount` | One SGC line, `FIXEDAMOUNT`, expense `478`, liability `826`, no Amount and no 12%. A blank Fixed Amount is intentional and is not a failed check. The contact omits a default purchase account. Weekly 12% super stays on the existing payslip fix. |
 | `pay-template-full-replace` | `updateEmployee` does not document merge versus replace. The step sends the full desired template. |
 | `accounts-payable-tax-input` | No GST flag on Payroll AU. `AccountsPayableTaxType` is `INPUT` for both YES and NO until Thiago confirms. The unconfirmed NO value is BAS Excluded (`BASEXCLUDED`). |
-| `emergency-contact-webhook-only` | Emergency contact cannot be set through the API. It is only on the Patty webhook payload. |
+| `emergency-contact-webhook-only` | Emergency contact stays in Airtable only. Payroll AU has no field for it. The Patty webhook step is removed. The end check and Slack report do not mention it, and a missing emergency contact does not change the header. |
 | `xero-email-skip-name-hold` | Email match skips the create and is logged. Name-only match is held for a person to check and is not created. |
 
 ### Open decisions
 
-Settled, and not repeated here as choices: Cloudflare Worker + Queue + Workflows, hourly Airtable poll into the queue (no automation script), Workflow instance id as the Xero lock, KV watermark for the poll, OAuth refresh token (not a Xero Custom Connection), no custom-code step, `+61` mapping left as the Zap wrote it. Dry-run logs mask TFN, bank account, BSB, ABN, and member number. The live success Slack post stays the Zap text. `SLACK_CHANNEL_ID` is that live channel. `SLACK_DRY_RUN_CHANNEL_ID` is required while dry run is on, including preview and held-match alerts. Dry run does not fall through to the live channel. `POST /run` is the authenticated one-record run. It respects dry run and the Workflow instance id, and it does not move the KV watermark. `SAFETY_NET_NOT_BEFORE` stays an env var. The poll uses that value as the initial cursor.
+Settled, and not repeated here as choices: Cloudflare Worker + Queue + Workflows, hourly Airtable poll into the queue (no automation script), Workflow instance id as the Xero lock, KV watermark for the poll, OAuth refresh token (not a Xero Custom Connection), no custom-code step. Contact mobile is `+61 ` plus the Airtable value with a leading 0 removed. Compact `+614…` is not applied. Dry-run logs mask TFN, bank account, BSB, ABN, and member number. The completion Slack post is the checklist: each sensitive value is PASS or MISSING, and a missing line uses the attention header. `SLACK_CHANNEL_ID` is the live channel. `SLACK_DRY_RUN_CHANNEL_ID` is required while dry run is on, including preview and held-match alerts. Dry run does not fall through to the live channel. `POST /run` is the authenticated one-record run. It respects dry run and the Workflow instance id, and it does not move the KV watermark. `SAFETY_NET_NOT_BEFORE` stays an env var. The poll uses that value as the initial cursor.
 
 Still open:
 
 1. Switchover: explicit go, Zap off before this is on, and the `SAFETY_NET_NOT_BEFORE` timestamp.
-2. `contact-mobile-plus61-prefix`: keep `+610412…`, or apply the proposed `+614…` form. The code still concatenates.
+2. `contact-mobile-plus61-prefix`: the spaced `+61 ` form is applied. Compact `+614…` stays unused.
 3. Xero demo company: optional later sandbox. Not connected from these tests.
 4. Product calls on the other oddities: NSW on the employee, `{{=)}}` and the Sydney timezone assumption, BSB+account concatenation, null TaxScaleType, empty gender for Not Stated, TFN in Slack and email, reconstructed Slack text, `sh4iX` link, unconfirmed Airtable column names. The YES/NO GST split is still open: both stay `INPUT` until Thiago confirms.
 5. If the Xero refresh token rotates on every use, KV would be the smallest place to store the new token. That store is not built, and it would not be the duplicate lock. Confirm the token is long-lived.
@@ -264,7 +264,7 @@ Unit tests cover each step. Required cases: unknown super fund, missing fields, 
 | DOB | DateOfBirth | |
 | Email | Email | EmailAddress |
 | Gender | step 3 code | |
-| Mobile | Mobile, unchanged | `+61` + Mobile (proposed `+614…` is not applied) |
+| Mobile | Mobile, unchanged | `+61 ` + Mobile with a leading 0 removed (compact `+614…` is not applied) |
 | Super Fund | SuperMemberships.SuperFundID | named in Slack and email |
 | Superannuation Member Number | SuperMemberships.EmployeeNumber | |
 | TFN | TaxDeclaration.TaxFileNumber | |

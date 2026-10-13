@@ -134,18 +134,6 @@ export interface XeroPayTemplate {
   LeaveLines: [];
 }
 
-export interface PattyWebhookPayload {
-  xeroEmployeeId: string | null;
-  xeroContactId: string | null;
-  firstName: string;
-  lastName: string;
-  email: string;
-  airtableRecordId: string;
-  emergencyContactName: string;
-  emergencyContactMobile: string;
-  xeroEmployeeUrl: string | null;
-}
-
 export interface OutboundEmail {
   from: string;
   fromName: string;
@@ -207,10 +195,6 @@ export interface WorkflowSuccess {
   payTemplate: {
     updated: boolean;
     template: XeroPayTemplate;
-  };
-  webhook: {
-    posted: boolean;
-    payload: PattyWebhookPayload;
   };
   flags: string[];
 }

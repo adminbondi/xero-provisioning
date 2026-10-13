@@ -236,12 +236,27 @@ test("the go-live cutoff is the env value passed in, and the production config d
   const stripped = wrangler.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const config = JSON.parse(stripped) as {
     vars: Record<string, string>;
-    env: { preview: { vars: Record<string, string> } };
+    env: {
+      preview: {
+        name: string;
+        vars: Record<string, string>;
+        triggers: { crons: string[] };
+        queues: { consumers: Array<{ queue: string }> };
+        kv_namespaces: Array<{ binding: string; id: string }>;
+      };
+    };
   };
   assert.equal(config.vars.DRY_RUN, undefined);
   assert.equal(config.vars.SAFETY_NET_NOT_BEFORE, undefined);
-  assert.equal(config.env.preview.vars.DRY_RUN, "true");
-  assert.equal(config.env.preview.vars.SAFETY_NET_NOT_BEFORE, "2026-10-12T09:19:56Z");
+  assert.equal(config.env.preview.name, "instructor-onboarding-preview");
+  assert.equal(config.env.preview.vars.DRY_RUN, "false");
+  assert.equal(config.env.preview.vars.SAFETY_NET_NOT_BEFORE, "2099-01-01T00:00:00Z");
+  assert.equal(config.env.preview.vars.SLACK_CHANNEL_ID, "C0C8CEZN64E");
+  assert.equal(config.env.preview.vars.SLACK_DRY_RUN_CHANNEL_ID, "C0C8CEZN64E");
+  assert.deepEqual(config.env.preview.triggers.crons, []);
+  assert.equal(config.env.preview.queues.consumers[0]?.queue, "instructor-onboarding-preview-intake");
+  assert.equal(config.env.preview.kv_namespaces[0]?.binding, "AIRTABLE_CURSOR");
+  assert.equal(config.env.preview.kv_namespaces[0]?.id, "4c20b4595aa54066a791d522e09e52ed");
   assert.match(wrangler, /--keep-vars/);
   const previewCutoff = "2026-03-01T00:00:00.000Z";
   assert.equal(createdAfterFormula(previewCutoff), "IS_AFTER(CREATED_TIME(), '2026-03-01T00:00:00.000Z')");

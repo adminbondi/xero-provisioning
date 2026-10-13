@@ -2,9 +2,9 @@
 
 Rebuild of Zapier Zap 364623444, steps 1–7, for Balance Moves (Bondi). Jira steps 8–9 are not implemented. There is no custom-code step: the published map has none, and the placeholder slot has been removed.
 
-Host (decided, not deployed): one Cloudflare Worker. Once an hour it lists new rows in Airtable and puts each one on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each Zap step is its own `step.do`, followed by an employee read, a pay-template finalise, and a Patty webhook. Airtable's free plan cannot run scripts, so there is no Airtable automation. This hourly cron is the only cron. It replaces the automation and the daily safety net. KV stores the created-time watermark. D1 is not used.
+Host (decided, not deployed): one Cloudflare Worker. Once an hour it lists new rows in Airtable and puts each one on a Queue. The consumer starts one [Cloudflare Workflow](https://developers.cloudflare.com/workflows/) instance per record, using the Airtable record id as the instance id. Each Zap step is its own `step.do`, followed by an employee read and a pay-template finalise. The Patty webhook step is removed. Airtable's free plan cannot run scripts, so there is no Airtable automation. This hourly cron is the only cron. It replaces the automation and the daily safety net. KV stores the created-time watermark. D1 is not used.
 
-The repo README has the full write-up, including the watermark, the `+61` mobile oddity (behavior unchanged; proposed E.164 is `+614…`), and switchover (do not switch the Zap off without Thiago's explicit go).
+The repo README has the full write-up, including the watermark, the contact mobile (`+61 ` with a leading 0 removed; compact `+614…` is not applied), and switchover (do not switch the Zap off without Thiago's explicit go).
 
 ## Run
 
@@ -87,11 +87,9 @@ Airtable's free plan cannot run scripts, so the record-created automation is not
 | `GMAIL_CLIENT_SECRET` | Google | OAuth client secret. |
 | `GMAIL_REFRESH_TOKEN` | Google | Refresh token for that mailbox. |
 | `SAFETY_NET_NOT_BEFORE` | Worker | Initial created-time cursor. Unset, with no KV watermark, means the poll lists nothing. |
-| `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, Gmail, and webhook writes. |
-| `PATTY_WEBHOOK_URL` | Patty | Placeholder. Not set. A dry run logs the payload and does not POST. |
-| `PATTY_WEBHOOK_SIGNING_SECRET` | Patty | Placeholder for the HMAC secret. Not set. |
+| `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, and Gmail writes. |
 
-`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run Slack and email previews are masked the same way. A live #management Slack post is still the Zap text. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). The dry-run poll uses its own KV watermark, so it does not consume the live cursor or the live instance id. A second dry run of the same record does not start another instance.
+`DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run email preview is masked the same way. The completion Slack checklist reports those fields as PASS or MISSING and does not include the values. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). The dry-run poll uses its own KV watermark, so it does not consume the live cursor or the live instance id. A second dry run of the same record does not start another instance.
 
 Do not deploy this pull request. When a production deploy does happen, use `npx wrangler deploy --keep-vars` so live `DRY_RUN` and `SAFETY_NET_NOT_BEFORE` stay as they are. Do not put those two keys back in the top-level vars.
 
@@ -107,7 +105,7 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `gender-not-stated-empty`
 - `start-date-zapier-expression`
 - `contact-bank-bsb-concat`
-- `contact-mobile-plus61-prefix` — still `+61` plus the raw mobile (`0412…` becomes `+610412…`). Proposed E.164 drops the trunk 0 (`+614…`). Not applied.
+- `contact-mobile-plus61-prefix` — `+61 ` plus the Airtable mobile with a leading 0 removed (`0400 000 000` becomes `+61 400 000 000`). Compact `+614…` is not applied.
 - `employee-bank-left-empty`
 - `tax-scale-type-null`
 - `tfn-in-slack-and-email`
@@ -130,8 +128,8 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `reject-numeric-airtable-fields`
 - `notifications-not-resent`
 - `abn-on-tax-declaration`
-- `ivan-sgc-fixed-amount`
+- `ivan-sgc-fixed-amount` — Fixed Amount stays blank on purpose. A blank amount is not a failed check. The contact has no default purchase account.
 - `pay-template-full-replace`
 - `accounts-payable-tax-input`
-- `emergency-contact-webhook-only`
+- `emergency-contact-webhook-only` — stays in Airtable only. The end check and Slack report do not mention it, and a missing emergency contact does not change the header.
 - `xero-email-skip-name-hold` — email match skips the create and is logged. A name-only match is held for a person to check and is not created. `POST /run` runs one Airtable record id with the ingress token, respects dry run and the Workflow instance id, and does not move the KV watermark. Slack uses `SLACK_DRY_RUN_CHANNEL_ID` while dry run is on and `SLACK_CHANNEL_ID` only for a live run.

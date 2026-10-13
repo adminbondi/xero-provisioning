@@ -21,9 +21,9 @@ export function dryRunPorts(): Ports {
       findContactsByEmail: () => blocked("contacts.findContactsByEmail"),
       findContactsByName: () => blocked("contacts.findContactsByName"),
       upsertContact: () => blocked("contacts.upsertContact"),
+      getContact: () => blocked("contacts.getContact"),
     },
     slack: { postMessage: () => blocked("slack.postMessage") },
     email: { send: () => blocked("email.send") },
-    webhook: { post: () => blocked("webhook.post") },
   };
 }

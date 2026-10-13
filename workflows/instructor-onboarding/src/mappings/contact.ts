@@ -6,9 +6,14 @@ export function instructorFullName(record: Pick<InstructorRecord, "firstName" | 
   return `${record.firstName} ${record.lastName}`;
 }
 
-/** Zap mapping: Mobile is "+61" concatenated with the Airtable mobile. No digit stripping. */
+/**
+ * Drop the trunk 0 and keep the rest of the Airtable mobile, including spaces.
+ * `0400 000 000` becomes `+61 400 000 000`, not `+610400 000 000`.
+ */
 export function contactMobile(mobile: string): string {
-  return `+61${mobile}`;
+  const trimmed = mobile.trim();
+  const local = trimmed.startsWith("0") ? trimmed.slice(1).trimStart() : trimmed;
+  return `+61 ${local}`;
 }
 
 /**

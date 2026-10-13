@@ -39,7 +39,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "contact-mobile-plus61-prefix",
     summary:
-      'Contact mobile is the literal prefix "+61" concatenated with the Airtable mobile, so 0412… becomes +610412…. That is not valid E.164. The proposed format drops the trunk 0 (0412… becomes +61412…). Not applied. Employee mobile stays the raw Airtable value.',
+      'Contact mobile drops a leading 0 and is stored as "+61 " plus the rest of the Airtable value, so 0400 000 000 becomes +61 400 000 000. The compact proposed E.164 form (+614…) is not applied. Employee mobile stays the raw Airtable value.',
   },
   {
     id: "employee-bank-left-empty",
@@ -52,7 +52,8 @@ export const ODDITIES: readonly FlaggedItem[] = [
   },
   {
     id: "tfn-in-slack-and-email",
-    summary: "The TFN is included in the #management Slack checklist and in the instructor confirmation email.",
+    summary:
+      "The completion Slack checklist reports TFN as PASS or MISSING and does not include the number. The instructor confirmation email still includes the TFN.",
   },
   {
     id: "no-view-or-filter",
@@ -82,7 +83,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "message-text-reconstructed-from-summary",
     summary:
-      "Slack copy is still reconstructed from the map summary. The instructor email body is Thiago's verbatim step 7 HTML. The admin@ Gmail signature HTML was not in that export and is not invented.",
+      "The completion Slack message is the onboarding checklist. Each sensitive value is PASS or MISSING. The instructor email body is Thiago's verbatim step 7 HTML. The admin@ Gmail signature HTML was not in that export and is not invented.",
   },
   {
     id: "country-literal-australia",
@@ -96,7 +97,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "slack-bank-line-is-account-number",
     summary:
-      "The Slack checklist has a bank line and a BSB line. The map has no bank-name field, so the bank line is the account number.",
+      "The completion checklist reports bank details as PASS or MISSING. It does not print the account number. The map has no bank-name field.",
   },
 ];
 
@@ -142,7 +143,7 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "ivan-sgc-fixed-amount",
     summary:
-      "PayTemplate SuperLines is one SGC line with CalculationType FIXEDAMOUNT, ExpenseAccountCode 478, LiabilityAccountCode 826, and no MinimumMonthlyEarnings. Weekly super at 12% stays on the existing payslip fix and is not put on this line.",
+      "PayTemplate SuperLines is one SGC line with CalculationType FIXEDAMOUNT, ExpenseAccountCode 478, LiabilityAccountCode 826, and no Amount. A blank Fixed Amount is intentional and the end check does not flag it. The contact omits PurchasesDefaultAccountCode because the reference contact has none. Weekly super at 12% stays on the existing payslip fix and is not put on this line.",
   },
   {
     id: "pay-template-full-replace",
@@ -157,7 +158,7 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "emergency-contact-webhook-only",
     summary:
-      "Emergency contact cannot be set through the Payroll AU or Accounting API. It is only on the Patty webhook payload.",
+      "Emergency contact stays on the Airtable record only. Payroll AU has no field for it, and the Patty webhook step is removed. The end check and the Slack report do not mention it. A missing emergency contact does not change the header.",
   },
   {
     id: "xero-email-skip-name-hold",
