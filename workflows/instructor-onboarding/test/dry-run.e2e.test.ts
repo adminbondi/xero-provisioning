@@ -48,8 +48,9 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(result.contact.payload.Phones[0]?.PhoneNumber, "+61 412345678");
   assert.equal(result.slack.sent, true);
   assert.equal(result.slack.channel, "C09BK6Y2WHL");
-  assert.match(result.slack.text, /Onboarding needs attention/);
-  assert.match(result.slack.text, /MISSING Emergency contact/);
+  assert.match(result.slack.text, /has been fully onboarded in Xero/);
+  assert.equal(result.slack.text.includes("Emergency contact"), false);
+  assert.equal(result.slack.text.includes("Onboarding needs attention"), false);
   assert.match(result.slack.text, /PASS Default purchase account/);
   assert.match(result.slack.text, /PASS Super line AustralianSuper SGC Fixed Amount accounts 478 and 826/);
   assert.match(result.slack.text, /https:\/\/go\.xero\.com\/app\/!hGL34\/payroll\/employee\/employee-1\/details/);

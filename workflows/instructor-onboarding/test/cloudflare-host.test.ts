@@ -126,8 +126,9 @@ test("DRY_RUN returns the would-send payloads and does not write", async () => {
   assert.deepEqual(result.contact.payload, buildContactPayload(record));
   assert.equal(result.contact.created, false);
   assert.equal(result.slack.channel, deps.config!.slackChannelId);
-  assert.match(result.slack.text, /Onboarding needs attention/);
-  assert.match(result.slack.text, /MISSING Emergency contact/);
+  assert.match(result.slack.text, /has been fully onboarded in Xero/);
+  assert.equal(result.slack.text.includes("Emergency contact"), false);
+  assert.equal(result.slack.text.includes("Onboarding needs attention"), false);
   assert.equal(result.slack.text.includes(record.tfn), false);
   assert.equal(result.slack.sent, false);
   const liveEmail = buildInstructorEmail(record, deps.config!);

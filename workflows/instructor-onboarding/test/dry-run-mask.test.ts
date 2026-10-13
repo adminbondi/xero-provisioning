@@ -48,7 +48,8 @@ test("dry-run logs and previews omit payroll secrets and say which fields are pr
     assert.match(logged, /"abn":true/);
     assert.match(logged, /"memberNumber":true/);
     assert.equal(logged.includes("0412345678"), true);
-    assert.match(preview.slack.text, /MISSING Emergency contact/);
+    assert.match(preview.slack.text, /has been fully onboarded in Xero/);
+    assert.equal(preview.slack.text.includes("Emergency contact"), false);
     assert.equal(preview.slack.text.includes("0412345678"), false);
     assert.match(preview.email.message.html, /\[TFN\]/);
     assert.match(preview.email.message.html, /\[bank account\]/);
@@ -57,7 +58,9 @@ test("dry-run logs and previews omit payroll secrets and say which fields are pr
     assert.equal(fake.calls.length, 0);
 
     const live = await runInstructorOnboarding(raw, deps);
-    assert.match(live.slack.text, /Onboarding needs attention/);
+    assert.match(live.slack.text, /has been fully onboarded in Xero/);
+    assert.equal(live.slack.text.includes("Emergency contact"), false);
+    assert.equal(live.slack.text.includes("Onboarding needs attention"), false);
     assert.match(live.slack.text, /PASS Mobile format/);
     for (const secret of [record.tfn, record.account, record.bsb, record.abn, record.memberNumber, "0412345678"]) {
       assert.equal(live.slack.text.includes(secret), false);

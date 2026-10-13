@@ -55,7 +55,6 @@ export function setupCheckLines(facts: SetupFacts): SetupCheckLine[] {
     { label: "Weekly pay calendar", ok: facts.weeklyCalendar },
     { label: "Residency", ok: facts.residencyStatus === "AUSTRALIANRESIDENT" },
     { label: "TFN on file", ok: facts.tfnPresent },
-    { label: "Emergency contact", ok: false },
     { label: "Mobile format", ok: contactMobileOk(facts.mobile) },
     { label: "Default purchase account", ok: facts.purchaseAccountCode == null || facts.purchaseAccountCode === "" },
     { label: "Bank details", ok: facts.bankDetailsPresent },
@@ -69,8 +68,7 @@ function escapeMrkdwn(value: string): string {
 
 /**
  * Completion Slack message. Sensitive fields are PASS or MISSING, never the value.
- * Payroll AU has no emergency-contact field, so that line is always MISSING and the
- * header is the attention alert.
+ * Emergency contact stays in Airtable and is not a check, so it never changes this header.
  */
 export function buildSlackMessage(input: {
   name: string;

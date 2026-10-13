@@ -158,7 +158,7 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "emergency-contact-webhook-only",
     summary:
-      "Emergency contact cannot be set through the Payroll AU or Accounting API. The Patty webhook step is removed. The end check always reports it MISSING.",
+      "Emergency contact stays on the Airtable record only. Payroll AU has no field for it, and the Patty webhook step is removed. The end check and the Slack report do not mention it. A missing emergency contact does not change the header.",
   },
   {
     id: "xero-email-skip-name-hold",

@@ -131,5 +131,5 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `ivan-sgc-fixed-amount` — Fixed Amount stays blank on purpose. A blank amount is not a failed check. The contact has no default purchase account.
 - `pay-template-full-replace`
 - `accounts-payable-tax-input`
-- `emergency-contact-webhook-only` — Payroll AU cannot store it. The Patty webhook step is removed. The end check reports it MISSING.
+- `emergency-contact-webhook-only` — stays in Airtable only. The end check and Slack report do not mention it, and a missing emergency contact does not change the header.
 - `xero-email-skip-name-hold` — email match skips the create and is logged. A name-only match is held for a person to check and is not created. `POST /run` runs one Airtable record id with the ingress token, respects dry run and the Workflow instance id, and does not move the KV watermark. Slack uses `SLACK_DRY_RUN_CHANNEL_ID` while dry run is on and `SLACK_CHANNEL_ID` only for a live run.

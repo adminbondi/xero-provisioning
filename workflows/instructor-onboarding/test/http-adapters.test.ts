@@ -189,7 +189,9 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
       assert.equal(parsed.channel, "C09BK6Y2WHL");
       assert.match(parsed.text, /emp-http/);
       assert.match(parsed.text, /con-http/);
-      assert.match(parsed.text, /MISSING Emergency contact/);
+      assert.match(parsed.text, /has been fully onboarded in Xero/);
+      assert.equal(parsed.text.includes("Emergency contact"), false);
+      assert.equal(parsed.text.includes("Onboarding needs attention"), false);
       assert.match(parsed.text, /PASS Default purchase account/);
       assert.equal(parsed.text.includes("123456782"), false);
       assert.equal(parsed.text.includes("90817263"), false);

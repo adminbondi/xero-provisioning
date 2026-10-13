@@ -195,7 +195,7 @@ Safety around the Zap, not silent mapping fixes.
 | `ivan-sgc-fixed-amount` | One SGC line, `FIXEDAMOUNT`, expense `478`, liability `826`, no Amount and no 12%. A blank Fixed Amount is intentional and is not a failed check. The contact omits a default purchase account. Weekly 12% super stays on the existing payslip fix. |
 | `pay-template-full-replace` | `updateEmployee` does not document merge versus replace. The step sends the full desired template. |
 | `accounts-payable-tax-input` | No GST flag on Payroll AU. `AccountsPayableTaxType` is `INPUT` for both YES and NO until Thiago confirms. The unconfirmed NO value is BAS Excluded (`BASEXCLUDED`). |
-| `emergency-contact-webhook-only` | Payroll AU has no emergency-contact field. The Patty webhook step is removed. The end check always reports it MISSING. |
+| `emergency-contact-webhook-only` | Emergency contact stays in Airtable only. Payroll AU has no field for it. The Patty webhook step is removed. The end check and Slack report do not mention it, and a missing emergency contact does not change the header. |
 | `xero-email-skip-name-hold` | Email match skips the create and is logged. Name-only match is held for a person to check and is not created. |
 
 ### Open decisions
