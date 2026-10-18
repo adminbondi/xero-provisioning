@@ -6,7 +6,7 @@ import "./block-network.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
-import { createAirtablePort, createLivePorts, type LiveEnv } from "../src/host/http.ts";
+import { createAirtablePort, createLivePorts, createPattyWebhookPort, type LiveEnv } from "../src/host/http.ts";
 import { signWebhookBody } from "../src/host/webhook-sign.ts";
 import { AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, defaultConfig } from "../src/config.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
@@ -181,7 +181,9 @@ test("dry-run HTTP adapters post the Zap payloads only to the injected fetch", a
     }
     if (url === WEBHOOK_URL) {
       assert.equal(init?.method, "POST");
-      const signature = new Headers(init?.headers).get("x-balance-moves-signature");
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), `Bearer ${WEBHOOK_SECRET}`);
+      const signature = headers.get("x-balance-moves-signature");
       assert.equal(signature, await signWebhookBody(WEBHOOK_SECRET, body ?? ""));
       const parsed = JSON.parse(body ?? "{}") as {
         xeroEmployeeId: string;
@@ -296,4 +298,32 @@ test("the Airtable adapter rejects a view or a filter", async () => {
       }),
     /must not set a view/,
   );
+});
+
+test("patty webhook sends Bearer as the exact signing secret and still signs the body", async () => {
+  const secret = "  test-webhook-secret";
+  let authorization: string | null = null;
+  let signature: string | null = null;
+  let sentBody = "";
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const headers = new Headers(init?.headers);
+    authorization = headers.get("authorization");
+    signature = headers.get("x-balance-moves-signature");
+    sentBody = init?.body == null ? "" : String(init.body);
+    return Response.json({ ok: true });
+  };
+  await createPattyWebhookPort({ fetch: fetchImpl, url: WEBHOOK_URL, signingSecret: secret }).post({
+    xeroEmployeeId: "emp-http",
+    xeroContactId: "con-http",
+    firstName: "Test",
+    lastName: "Instructor",
+    email: "test.instructor@example.com",
+    airtableRecordId: "recTest001",
+    emergencyContactName: "",
+    emergencyContactMobile: "",
+    xeroEmployeeUrl: null,
+  });
+  assert.equal(authorization, `Bearer ${secret}`);
+  assert.equal(authorization, "Bearer   test-webhook-secret");
+  assert.equal(signature, await signWebhookBody(secret, sentBody));
 });

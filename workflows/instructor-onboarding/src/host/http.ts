@@ -441,10 +441,12 @@ export function createPattyWebhookPort(options: {
       if (!options.signingSecret) throw new Error("PATTY_WEBHOOK_SIGNING_SECRET is not set.");
       const body = JSON.stringify(payload);
       const signature = await signWebhookBody(options.signingSecret, body);
+      // Cursor's webhook form checks Authorization. The value is the secret as stored: no trim, no added quotes.
       const response = await fetchImpl(options.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${options.signingSecret}`,
           "X-Balance-Moves-Signature": signature,
         },
         body,
