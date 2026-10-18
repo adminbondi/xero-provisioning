@@ -89,7 +89,7 @@ Airtable's free plan cannot run scripts, so the record-created automation is not
 | `SAFETY_NET_NOT_BEFORE` | Worker | Initial created-time cursor. Unset, with no KV watermark, means the poll lists nothing. |
 | `DRY_RUN` | Worker | Default `true`. Only `false` allows Xero, Slack, Gmail, and webhook writes. |
 | `PATTY_WEBHOOK_URL` | Patty | Placeholder. Not set. A dry run logs the payload and does not POST. |
-| `PATTY_WEBHOOK_SIGNING_SECRET` | Patty | Placeholder for the HMAC secret. Not set. |
+| `PATTY_WEBHOOK_SIGNING_SECRET` | Patty | Bearer token and HMAC key. Sent as `Authorization: Bearer` plus the exact value, not trimmed. Not set. |
 
 `DRY_RUN` is on for the first deploy. A dry run logs each step's would-send payload and does not write. Those logs omit the TFN, bank account number, BSB, ABN, and super fund member number, and instead say whether each field is present. The dry-run Slack and email previews are masked the same way. A live #management Slack post is still the Zap text. Its Workflow instance id is `{record id}-dry` (Cloudflare ids cannot contain `:`). The dry-run poll uses its own KV watermark, so it does not consume the live cursor or the live instance id. A second dry run of the same record does not start another instance.
 
