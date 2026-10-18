@@ -249,3 +249,35 @@ test("live ports persist a rotated token through KV before calling Xero", async 
   assert.equal(xeroCalls, 1);
   assert.equal(kv.get(XERO_REFRESH_KV_KEY), "rotated-refresh-token");
 });
+
+test("a non-grant token 400 keeps the OAuth error code and drops token text", async () => {
+  const planted = "planted-refresh-token-value";
+  const fetchImpl: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: "invalid_request",
+        error_description: `refresh_token ${planted} was not accepted`,
+      }),
+      { status: 400 },
+    );
+  await assert.rejects(
+    () =>
+      sharedOauthAccessToken({
+        fetch: fetchImpl,
+        tokenUrl: TOKEN_URL,
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        secretFallback: "stale-secret",
+        store: memoryStore("store-live-token"),
+        session: createOauthSession(),
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, "Unexpected token response status: 400 (invalid_request)");
+      assert.equal(error.message.includes(planted), false);
+      assert.equal(error.message.includes("error_description"), false);
+      assertNoSentinels(error.message);
+      return true;
+    },
+  );
+});

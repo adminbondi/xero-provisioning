@@ -106,6 +106,22 @@ function isInvalidGrant(status: number, body: string): boolean {
   }
 }
 
+/** OAuth error code only. Descriptions and token values stay out of the message. */
+function oauthErrorCode(body: string): string {
+  try {
+    const payload = JSON.parse(body) as { error?: unknown };
+    if (typeof payload.error === "string" && /^[a-z0-9_]{1,64}$/i.test(payload.error)) return payload.error;
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function unexpectedTokenStatus(status: number, body: string): Error {
+  const code = oauthErrorCode(body);
+  return new Error(`Unexpected token response status: ${status}${code ? ` (${code})` : ""}`);
+}
+
 async function postRefresh(
   fetchImpl: typeof fetch,
   tokenUrl: string,
@@ -122,7 +138,7 @@ async function postRefresh(
   });
   const text = await response.text();
   if (isInvalidGrant(response.status, text)) throw new InvalidGrant();
-  if (!response.ok) throw new Error(`Unexpected token response status: ${response.status}`);
+  if (!response.ok) throw unexpectedTokenStatus(response.status, text);
   let payload: unknown;
   try {
     payload = JSON.parse(text) as unknown;
