@@ -52,7 +52,8 @@ export const ODDITIES: readonly FlaggedItem[] = [
   },
   {
     id: "tfn-in-slack-and-email",
-    summary: "The TFN is included in the #management Slack checklist and in the instructor confirmation email.",
+    summary:
+      "The end-check Slack report says TFN is PASS or MISSING and does not include the number. The instructor confirmation email still includes the TFN.",
   },
   {
     id: "no-view-or-filter",
@@ -82,7 +83,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "message-text-reconstructed-from-summary",
     summary:
-      "Slack copy is still reconstructed from the map summary. The instructor email body is Thiago's verbatim step 7 HTML. The admin@ Gmail signature HTML was not in that export and is not invented.",
+      "The Slack report is the end-check checklist. Each sensitive value is PASS or MISSING. The instructor email body is Thiago's verbatim step 7 HTML. The admin@ Gmail signature HTML was not in that export and is not invented.",
   },
   {
     id: "country-literal-australia",
@@ -96,7 +97,7 @@ export const ODDITIES: readonly FlaggedItem[] = [
   {
     id: "slack-bank-line-is-account-number",
     summary:
-      "The Slack checklist has a bank line and a BSB line. The map has no bank-name field, so the bank line is the account number.",
+      "The end-check report says bank details are PASS or MISSING. It does not print the account number. The map has no bank-name field.",
   },
 ];
 
@@ -142,7 +143,7 @@ export const DESIGN_ADDITIONS: readonly FlaggedItem[] = [
   {
     id: "ivan-sgc-fixed-amount",
     summary:
-      "PayTemplate SuperLines is one SGC line with CalculationType FIXEDAMOUNT, ExpenseAccountCode 478, LiabilityAccountCode 826, and no MinimumMonthlyEarnings. Weekly super at 12% stays on the existing payslip fix and is not put on this line.",
+      "PayTemplate SuperLines is one SGC line with CalculationType FIXEDAMOUNT, ExpenseAccountCode 478, LiabilityAccountCode 826, and no Amount. A blank, 0, \"0\", or \"0.00\" Fixed Amount passes the end check. A non-zero amount is MISSING. Weekly super at 12% stays on the existing payslip fix and is not put on this line.",
   },
   {
     id: "pay-template-full-replace",

@@ -166,16 +166,16 @@ These match the Zap map. The code does not "correct" them.
 | `contact-mobile-plus61-prefix` | Contact mobile is `+61` plus the raw mobile, so `0412…` becomes `+610412…`. Proposed E.164 drops the trunk 0, so `0412345678` would be `+61412345678`. Not applied. Employee mobile is unchanged. |
 | `employee-bank-left-empty` | Employee BSB, account, middle name, phone, and job title are empty. |
 | `tax-scale-type-null` | IncomeType is NONEMPLOYEE. TaxScaleType stays null. |
-| `tfn-in-slack-and-email` | The TFN is in the #management message and in the instructor email. |
+| `tfn-in-slack-and-email` | The end-check Slack report says TFN is PASS or MISSING and does not include the number. The instructor email still includes the TFN. |
 | `no-view-or-filter` | The Zap had no view and no filter, so every new row was eligible. The poll still sets no view. It filters only by created time. |
 | `attachments-included-but-unused` | Attachment metadata is kept. Bytes are not downloaded. Steps 2–7 do not read them. |
 | `airtable-field-names-unconfirmed` | Column names are the map's labels, not confirmed field ids. |
 | `airtable-inbox-query-sh4iX` | Inbox link query key is `sh4iX`, as written. Confirm the live URL. |
 | `similar-super-fund-names-different-uuids` | Cbus and Media Super Accumulation keep different UUIDs. |
-| `message-text-reconstructed-from-summary` | Slack wording is still reconstructed from the summary. The instructor email body is the verbatim step 7 HTML. The Gmail signature HTML was not in that export. |
+| `message-text-reconstructed-from-summary` | The Slack report is the end-check checklist. Sensitive values are PASS or MISSING. The instructor email body is the verbatim step 7 HTML. The Gmail signature HTML was not in that export. |
 | `country-literal-australia` | Country is the literal `Australia`. |
 | `employee-not-updated-on-rerun` | The create step does not patch name, tax, or address. The pay-template step sends the full desired template so a retry replaces it. Contacts are updated by `ContactNumber`. |
-| `slack-bank-line-is-account-number` | The checklist's bank line is the account number. The map has no bank name. |
+| `slack-bank-line-is-account-number` | The end-check report says bank details are PASS or MISSING and does not print the account number. The map has no bank name. |
 
 Airtable labels used: First Name, Last Name, DOB, Email, Gender, Mobile, Super Fund, Superannuation Member Number, TFN, Residential Address, City/Suburb, State, Postal Code, ABN, BSB, Account. DOB must already be `YYYY-MM-DD`. Values are not trimmed.
 
@@ -192,7 +192,7 @@ Safety around the Zap, not silent mapping fixes.
 | `reject-numeric-airtable-fields` | Text columns such as BSB still reject numbers. TFN, ABN, member number, and Bank Account Number are live number columns and are read as integer text. |
 | `notifications-not-resent` | A finished Slack or email step is not run again, and a duplicate queue message does not start another instance. |
 | `abn-on-tax-declaration` | `TaxDeclaration.ABN` is the 11-digit Airtable ABN. The contact `TaxNumber` is the same ABN. |
-| `ivan-sgc-fixed-amount` | One SGC line, `FIXEDAMOUNT`, expense `478`, liability `826`, no minimum and no 12%. Weekly 12% super stays on the existing payslip fix. |
+| `ivan-sgc-fixed-amount` | One SGC line, `FIXEDAMOUNT`, expense `478`, liability `826`, no Amount and no 12%. A blank, `0`, `"0"`, or `"0.00"` Fixed Amount passes the end check. A non-zero amount is MISSING. Weekly 12% super stays on the existing payslip fix. |
 | `pay-template-full-replace` | `updateEmployee` does not document merge versus replace. The step sends the full desired template. |
 | `accounts-payable-tax-input` | No GST flag on Payroll AU. `AccountsPayableTaxType` is `INPUT` for both YES and NO until Thiago confirms. The unconfirmed NO value is BAS Excluded (`BASEXCLUDED`). |
 | `emergency-contact-webhook-only` | Emergency contact cannot be set through the API. It is only on the Patty webhook payload. |
@@ -200,7 +200,7 @@ Safety around the Zap, not silent mapping fixes.
 
 ### Open decisions
 
-Settled, and not repeated here as choices: Cloudflare Worker + Queue + Workflows, hourly Airtable poll into the queue (no automation script), Workflow instance id as the Xero lock, KV watermark for the poll, OAuth refresh token (not a Xero Custom Connection), no custom-code step, `+61` mapping left as the Zap wrote it. Dry-run logs mask TFN, bank account, BSB, ABN, and member number. The live success Slack post stays the Zap text. `SLACK_CHANNEL_ID` is that live channel. `SLACK_DRY_RUN_CHANNEL_ID` is required while dry run is on, including preview and held-match alerts. Dry run does not fall through to the live channel. `POST /run` is the authenticated one-record run. It respects dry run and the Workflow instance id, and it does not move the KV watermark. `SAFETY_NET_NOT_BEFORE` stays an env var. The poll uses that value as the initial cursor.
+Settled, and not repeated here as choices: Cloudflare Worker + Queue + Workflows, hourly Airtable poll into the queue (no automation script), Workflow instance id as the Xero lock, KV watermark for the poll, OAuth refresh token (not a Xero Custom Connection), no custom-code step, `+61` mapping left as the Zap wrote it. Dry-run logs mask TFN, bank account, BSB, ABN, and member number. The Slack report is the end-check checklist. A live read-back is PASS or MISSING. Dry run marks lines that were not read back from Xero as not checked (dry run). A blank purchase account passes. `SLACK_CHANNEL_ID` is that live channel. `SLACK_DRY_RUN_CHANNEL_ID` is required while dry run is on, including preview and held-match alerts. Dry run does not fall through to the live channel. `POST /run` is the authenticated one-record run. It respects dry run and the Workflow instance id, and it does not move the KV watermark. `SAFETY_NET_NOT_BEFORE` stays an env var. The poll uses that value as the initial cursor.
 
 Still open:
 

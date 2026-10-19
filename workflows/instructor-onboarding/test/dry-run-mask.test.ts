@@ -7,7 +7,6 @@ import { test } from "node:test";
 import { airtableFieldText, parseAirtableRecord } from "../src/airtable/parse-record.ts";
 import { sampleAirtableRecord } from "../src/fixtures/sample-instructor.ts";
 import { contactBankAccount } from "../src/mappings/contact.ts";
-import { buildSlackMessage } from "../src/messages/slack.ts";
 import { runInstructorOnboarding } from "../src/run.ts";
 import { redactSensitiveError } from "../src/sensitive.ts";
 import { runtime } from "./helpers.ts";
@@ -49,12 +48,9 @@ test("dry-run logs and previews omit payroll secrets and say which fields are pr
     assert.match(logged, /"abn":true/);
     assert.match(logged, /"memberNumber":true/);
     assert.equal(logged.includes("0412345678"), true);
-    assert.equal(preview.slack.text.includes("0412345678"), true);
-    assert.match(preview.slack.text, /\[TFN\]/);
-    assert.match(preview.slack.text, /\[BSB\]/);
-    assert.match(preview.slack.text, /\[ABN\]/);
-    assert.match(preview.slack.text, /\[bank account\]/);
-    assert.match(preview.slack.text, /\[member number\]/);
+    assert.equal(preview.slack.text.includes("0412345678"), false);
+    assert.match(preview.slack.text, /not checked \(dry run\)/);
+    assert.equal(preview.slack.text.includes("PASS"), false);
     assert.match(preview.email.message.html, /\[TFN\]/);
     assert.match(preview.email.message.html, /\[bank account\]/);
     assert.equal(preview.slack.sent, false);
@@ -62,18 +58,13 @@ test("dry-run logs and previews omit payroll secrets and say which fields are pr
     assert.equal(fake.calls.length, 0);
 
     const live = await runInstructorOnboarding(raw, deps);
-    const zapSlack = buildSlackMessage({
-      record,
-      employeeId: live.employee.employeeId ?? "",
-      contactId: live.contact.contactId ?? "",
-      config: deps.config!,
-    });
-    assert.equal(live.slack.text, zapSlack.text);
+    assert.match(live.slack.text, /PASS Mobile/);
+    assert.equal(live.slack.text.includes("MISSING"), false);
     for (const secret of [record.tfn, record.account, record.bsb, record.abn, record.memberNumber]) {
-      assert.equal(live.slack.text.includes(secret), true);
+      assert.equal(live.slack.text.includes(secret), false);
     }
     assert.equal(fake.slack.length, 1);
-    assert.equal(fake.slack[0]?.text, zapSlack.text);
+    assert.equal(fake.slack[0]?.text, live.slack.text);
   } finally {
     console.log = original;
   }

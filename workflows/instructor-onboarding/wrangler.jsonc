@@ -14,11 +14,39 @@
   },
   "env": {
     "preview": {
+      // No kv_namespaces. Wrangler must not attach the live AIRTABLE_CURSOR namespace.
+      // Preview has no Xero login of its own, so DRY_RUN stays on and no Xero token is read.
+      "name": "instructor-onboarding-preview",
       "vars": {
         "DRY_RUN": "true",
-        "SAFETY_NET_NOT_BEFORE": "2026-10-12T09:19:56Z",
-        "SLACK_CHANNEL_ID": "C09BK6Y2WHL",
+        "SAFETY_NET_NOT_BEFORE": "2099-01-01T00:00:00Z",
+        "SLACK_CHANNEL_ID": "C0C8CEZN64E",
         "SLACK_DRY_RUN_CHANNEL_ID": "C0C8CEZN64E"
+      },
+      "workflows": [
+        {
+          "name": "instructor-onboarding-preview",
+          "binding": "ONBOARDING_WORKFLOW",
+          "class_name": "InstructorOnboardingWorkflow"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "INTAKE_QUEUE",
+            "queue": "instructor-onboarding-preview-intake"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "instructor-onboarding-preview-intake",
+            "max_retries": 5,
+            "dead_letter_queue": "instructor-onboarding-preview-intake-dlq"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": []
       }
     }
   },

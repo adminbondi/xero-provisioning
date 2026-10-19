@@ -11,7 +11,6 @@ import { lookupSuperFund } from "../src/lookups/super-funds.ts";
 import { buildContactPayload } from "../src/mappings/contact.ts";
 import { buildEmployeePayload } from "../src/mappings/employee.ts";
 import { buildInstructorEmail } from "../src/messages/email.ts";
-import { buildSlackMessage } from "../src/messages/slack.ts";
 import { PIPELINE_STEPS, runInstructorOnboarding } from "../src/run.ts";
 import { runtime } from "./helpers.ts";
 
@@ -127,9 +126,9 @@ test("DRY_RUN returns the would-send payloads and does not write", async () => {
   assert.equal(result.employee.employeeId, null);
   assert.deepEqual(result.contact.payload, buildContactPayload(record));
   assert.equal(result.contact.created, false);
-  const liveSlack = buildSlackMessage({ record, employeeId: "{EmployeeID}", contactId: "{ContactID}", config: deps.config! });
-  assert.equal(result.slack.channel, liveSlack.channel);
-  assert.notEqual(result.slack.text, liveSlack.text);
+  assert.equal(result.slack.channel, deps.config!.slackChannelId);
+  assert.match(result.slack.text, /not checked \(dry run\)/);
+  assert.equal(result.slack.text.includes("PASS"), false);
   assert.equal(result.slack.text.includes(record.tfn), false);
   assert.equal(result.slack.sent, false);
   const liveEmail = buildInstructorEmail(record, deps.config!);

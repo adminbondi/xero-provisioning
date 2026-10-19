@@ -4,12 +4,12 @@ import { ZAPIER_START_DATE_EXPRESSION, defaultConfig, type WorkflowConfig } from
 import { MissingFieldsError, PayrollCalendarError } from "./errors.ts";
 import { PIPELINE_STEPS, STEP_CONFIG, type StepDo } from "./host/step-config.ts";
 import { lookupGender } from "./lookups/gender.ts";
-import { lookupSuperFund } from "./lookups/super-funds.ts";
-import { buildContactPayload, instructorFullName } from "./mappings/contact.ts";
+import { lookupSuperFund, superFundNameForId } from "./lookups/super-funds.ts";
+import { buildContactPayload, contactMobile, instructorFullName } from "./mappings/contact.ts";
 import { buildEmployeePayload, buildPayTemplate, employeeIdempotencyKey } from "./mappings/employee.ts";
 import { buildPattyWebhookPayload } from "./mappings/webhook.ts";
 import { buildInstructorEmail } from "./messages/email.ts";
-import { buildSlackMessage, buildXeroHoldMessage } from "./messages/slack.ts";
+import { buildSlackMessage, buildXeroHoldMessage, setupCheckLines, type SetupFacts } from "./messages/slack.ts";
 import { ODDITIES } from "./oddities.ts";
 import { maskSecretsDeep, maskText, payrollFieldPresence, payrollReplacements } from "./sensitive.ts";
 import type { EmployeeDetails, Ports, XeroEmployeePort } from "./ports.ts";
@@ -463,17 +463,99 @@ async function postSlack(
   if (match.disposition === "skip-email") {
     return { channel: config.slackChannelId, text: "", sent: false };
   }
+  const facts = await setupFacts(record, employeeId, contactId, config, deps);
   const message = buildSlackMessage({
-    record,
+    name: instructorFullName(record),
     employeeId: employeeId ?? "{EmployeeID}",
     contactId: contactId ?? "{ContactID}",
-    config,
+    recordId: record.recordId,
+    orgShortCode: config.orgShortCode,
+    channel: config.slackChannelId,
+    checks: setupCheckLines(facts),
   });
+  const missing = setupCheckLines(facts)
+    .filter((check) => check.status === "missing")
+    .map((check) => check.label);
+  console.log(JSON.stringify({ event: "xero-setup-check", recordId: record.recordId, missing }));
   if (deps.mode === "shadow") {
     return { channel: message.channel, text: maskText(message.text, payrollReplacements(record)), sent: false };
   }
   await deps.ports.slack.postMessage(message);
   return { ...message, sent: true };
+}
+
+async function setupFacts(
+  record: InstructorRecord,
+  employeeId: string | null,
+  contactId: string | null,
+  config: WorkflowConfig,
+  deps: RunDeps,
+): Promise<SetupFacts> {
+  const expectedSuperFundId = lookupSuperFund(record.superFund);
+  const payload = buildEmployeePayload({
+    record,
+    genderCode: lookupGender(record.gender),
+    superFundId: expectedSuperFundId,
+    payrollCalendarId: config.payrollCalendarId ?? "",
+    startDate: "",
+  });
+  const contactPayload = buildContactPayload(record);
+  const intended: SetupFacts = {
+    superFundId: expectedSuperFundId,
+    expectedSuperFundId,
+    superFundName: record.superFund,
+    contributionType: "SGC",
+    calculationType: "FIXEDAMOUNT",
+    expenseAccountCode: "478",
+    liabilityAccountCode: "826",
+    fixedAmountBlank: true,
+    memberNumberPresent: record.memberNumber.trim().length > 0,
+    abnPresent: record.abn.trim().length > 0,
+    employmentType: payload.EmploymentType,
+    incomeType: payload.IncomeType,
+    genderPresent: payload.Gender.trim().length > 0,
+    weeklyCalendar: Boolean(config.payrollCalendarId?.trim()),
+    residencyStatus: payload.TaxDeclaration.ResidencyStatus,
+    tfnPresent: record.tfn.trim().length > 0,
+    mobile: contactPayload.Phones[0].PhoneNumber,
+    expectedMobile: contactMobile(record.mobile),
+    purchaseAccountCode: null,
+    bankDetailsPresent: contactPayload.BankAccountDetails.trim().length > 0,
+    gstOnExpenses: contactPayload.AccountsPayableTaxType === "INPUT",
+    readBack: false,
+  };
+  if (deps.mode === "shadow" || !employeeId || !contactId) return intended;
+  const details = await deps.ports.employees.getEmployee(employeeId);
+  const calendars = await deps.ports.employees.listPayrollCalendars();
+  const calendar = calendars.find((item) => item.payrollCalendarId === details.payrollCalendarId);
+  const membership = details.superMemberships.find((item) => item.superFundId === expectedSuperFundId);
+  const actual = membership ?? details.superMemberships.find((item) => item.superFundId.trim().length > 0) ?? null;
+  const actualFundId = actual?.superFundId ?? null;
+  const contact = await deps.ports.contacts.getContact(contactId);
+  return {
+    superFundId: actualFundId,
+    expectedSuperFundId,
+    superFundName: actualFundId ? superFundNameForId(actualFundId) : null,
+    contributionType: details.superLine?.contributionType ?? null,
+    calculationType: details.superLine?.calculationType ?? null,
+    expenseAccountCode: details.superLine?.expenseAccountCode ?? null,
+    liabilityAccountCode: details.superLine?.liabilityAccountCode ?? null,
+    fixedAmountBlank: details.superLine?.amountBlank ?? true,
+    memberNumberPresent: Boolean(membership && membership.employeeNumber.trim().length > 0),
+    abnPresent: details.abnPresent,
+    employmentType: details.employmentType,
+    incomeType: details.incomeType,
+    genderPresent: Boolean(details.gender && details.gender.trim().length > 0),
+    weeklyCalendar: calendar?.calendarType === "WEEKLY",
+    residencyStatus: details.residencyStatus,
+    tfnPresent: details.tfnPresent,
+    mobile: contact.mobile,
+    expectedMobile: contactMobile(record.mobile),
+    purchaseAccountCode: contact.purchasesDefaultAccountCode,
+    bankDetailsPresent: contact.bankDetailsPresent,
+    gstOnExpenses: contact.accountsPayableTaxType === "INPUT",
+    readBack: true,
+  };
 }
 
 async function sendEmail(

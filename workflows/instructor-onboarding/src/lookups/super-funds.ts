@@ -29,6 +29,9 @@ export const SUPER_FUND_ENTRIES: readonly (readonly [string, string])[] = [
 ];
 
 const SUPER_FUND_BY_NAME: ReadonlyMap<string, string> = new Map(SUPER_FUND_ENTRIES);
+const SUPER_FUND_BY_ID: ReadonlyMap<string, string> = new Map(
+  SUPER_FUND_ENTRIES.map(([name, id]) => [id, name]),
+);
 
 export function lookupSuperFund(name: string): string {
   const id = SUPER_FUND_BY_NAME.get(name);
@@ -36,4 +39,9 @@ export function lookupSuperFund(name: string): string {
     throw new UnknownSuperFundError(name);
   }
   return id;
+}
+
+/** Airtable fund name for a Xero super fund id, or null when the id is not in the map. */
+export function superFundNameForId(id: string): string | null {
+  return SUPER_FUND_BY_ID.get(id) ?? null;
 }

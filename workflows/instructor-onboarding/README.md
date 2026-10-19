@@ -130,7 +130,7 @@ No secrets belong in this repo. A Xero demo company is a possible later sandbox 
 - `reject-numeric-airtable-fields`
 - `notifications-not-resent`
 - `abn-on-tax-declaration`
-- `ivan-sgc-fixed-amount`
+- `ivan-sgc-fixed-amount` — a blank, `0`, `"0"`, or `"0.00"` Fixed Amount passes the end check. A non-zero amount is MISSING.
 - `pay-template-full-replace`
 - `accounts-payable-tax-input`
 - `emergency-contact-webhook-only`

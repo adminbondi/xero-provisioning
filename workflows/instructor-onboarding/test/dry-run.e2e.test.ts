@@ -50,7 +50,11 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(result.contact.payload.Phones[0]?.PhoneNumber, "+610412345678");
   assert.equal(result.slack.sent, true);
   assert.equal(result.slack.channel, "C09BK6Y2WHL");
-  assert.match(result.slack.text, /has successfully been created in Xero/);
+  assert.match(result.slack.text, /has been fully onboarded in Xero/);
+  assert.match(result.slack.text, /PASS Mobile/);
+  assert.match(result.slack.text, /PASS Default purchase account/);
+  assert.equal(result.slack.text.includes("MISSING"), false);
+  assert.equal(result.slack.text.includes("Emergency contact"), false);
   assert.match(result.slack.text, /https:\/\/go\.xero\.com\/app\/!hGL34\/payroll\/employee\/employee-1\/details/);
   assert.equal(result.email.sent, true);
   assert.equal(result.email.message.from, "admin@balancemoves.com.au");
@@ -67,6 +71,9 @@ test("dry run exercises steps 1-7 against fakes", async () => {
       "employees.getEmployee",
       "employees.updatePayTemplate",
       "contacts.upsertContact",
+      "employees.getEmployee",
+      "employees.listPayrollCalendars",
+      "contacts.getContact",
       "slack.postMessage",
       "email.send",
       "webhook.post",
@@ -83,6 +90,9 @@ test("dry run exercises steps 1-7 against fakes", async () => {
   assert.equal(preview.employee.created, false);
   assert.equal(preview.contact.contactId, null);
   assert.equal(preview.slack.sent, false);
+  assert.match(preview.slack.text, /not checked \(dry run\)/);
+  assert.equal(preview.slack.text.includes("PASS"), false);
+  assert.equal(preview.slack.text.includes("MISSING"), false);
   assert.equal(preview.email.sent, false);
   assert.equal(shadow.fake.employees.length, 0);
   assert.equal(shadow.fake.contacts.length, 0);
